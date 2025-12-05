@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c12ca5c24cb82aa4f9b05889c7a54707, type: 3}
+  m_Name: InvoSDKConfig
+  m_EditorClassIdentifier: 
+  sdkKey: ivsdk_1k7q4TYGHOeZ9IOYbEPnIP0zLUDUdDeJYHFJOky6X3qaAFR69yAI3w7Bqx
+  gameId: 791956859264
+  gameName: Angry Birds 2020
+  playerName: Solo Player
+  gameIconUrl: https://storage.googleapis.com/invo-images/game-assets/24/icon/7f0cf8f2dbf14eb1843a3aef6eec7c9e/Group_1321316355_1.png
+  gameCurrencyName: Gems
+  gameCurrencyUrl: https://storage.googleapis.com/invo-images/game-assets/24/icon/7f0cf8f2dbf14eb1843a3aef6eec7c9e/Group_1321316355_1.png
+  gameVersion: 1.0
+  playerEmail: thesoloplayer@demogamessoloer.com
+  playerPassword: 1234567ssss8
+  useProduction: 0
