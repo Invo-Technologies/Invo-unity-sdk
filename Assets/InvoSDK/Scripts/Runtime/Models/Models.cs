@@ -26,8 +26,16 @@ namespace InvoSDK
     {
         public int currency_id;
         public string currency_name;
+        /// <summary>
+        /// The SPENDABLE figure — what the player can actually transfer, send or
+        /// spend right now. Use this for "your balance" UI.
+        /// </summary>
         public string available_balance;
         public string reserved_balance;
+        /// <summary>
+        /// available_balance + reserved_balance. Includes funds locked by in-flight
+        /// transfers/sends, so it is NOT spendable. Do not display it as "balance".
+        /// </summary>
         public string total_balance;
     }
 
@@ -37,33 +45,5 @@ namespace InvoSDK
         public string total_value;
         public int currency_count;
         public bool has_funds;
-    }
-
-    [Serializable]
-    public class PurchaseResponse
-    {
-        public string status;
-        public string transaction_id;
-        public string message;
-        public PurchaseDetails purchase_details;
-        public string order_id;
-    }
-
-    [Serializable]
-    public class PurchaseDetails
-    {
-        public string usd_charged;
-        public string currency_received;
-        public string currency_name;
-        public string new_balance;
-    }
-
-    [Serializable]
-    public class ItemPurchaseResponse
-    {
-        public string status;
-        public string transaction_id;
-        public string message;
-        public string order_id;
     }
 }

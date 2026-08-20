@@ -9,16 +9,31 @@ namespace InvoSDK
         public string message;                     // "Item purchased successfully"
         public string order_id;                    // e.g., "ORD_1759998299_QRA75WL1"
         public string transaction_id;              // e.g., "TXN20251009082459886850PRI52Y"
+
+        /// <summary>
+        /// CANONICAL post-write balance (Write-Response Contract). Decimal-as-string
+        /// in game-currency units. Read this, not <see cref="BalanceInfo.new_balance"/>,
+        /// which is retained only for legacy callers.
+        /// </summary>
+        public string new_balance;                 // "1740.00"
+        public string previous_balance;            // "1750.00"
+        public string currency_name;               // "Gems"
+
         public BalanceInfo balance_info;           // nested balance info
         public FinancialBreakdown financial_breakdown; // nested fee info
         public PlayerInfo player;                  // nested player info
         public PurchaseDetails purchase_details;   // nested item info
 
+        /// <summary>
+        /// LEGACY nested balance block. Prefer the top-level
+        /// <see cref="PurchaseItemResponse.new_balance"/> /
+        /// <see cref="PurchaseItemResponse.previous_balance"/>.
+        /// </summary>
         [Serializable]
         public class BalanceInfo
         {
             public string previous_balance;  // "1750.00"
-            public string new_balance;       // "1740.00"
+            public string new_balance;       // "1740.00" — legacy; read the top-level one
             public string amount_spent;      // "10.00"
         }
 
@@ -52,6 +67,11 @@ namespace InvoSDK
             public string total_price;       // "10.00"
         }
 
-        public bool IsSuccess => status != null && status.ToLower().Contains("success");
+        /// <summary>
+        /// Ordinal, case-insensitive EQUALITY against "success". Deliberately not a
+        /// Contains() check — that would also match "partial_success" — and not
+        /// ToLower(), which is culture-sensitive (Turkish-I).
+        /// </summary>
+        public bool IsSuccess => string.Equals(status, "success", StringComparison.OrdinalIgnoreCase);
     }
 }

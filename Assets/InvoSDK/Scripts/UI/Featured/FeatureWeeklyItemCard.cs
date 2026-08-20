@@ -23,22 +23,50 @@ namespace InvoSDK.UI
             itemData = item;
             onPurchase = onClick;
 
-            itemNameText.text = item.display_name;
-            //subtitleText.text = item.display_subtitle;
-            newPriceText.text = $"${item.price_usd:F2}";
-            oldPriceText.text = item.original_price_usd.HasValue
-                ? $"${item.original_price_usd.Value:F2}"
-                : "";
-            //discountTagText.text = item.discount_percentage.HasValue
-            //    ? $"{item.discount_percentage.Value:F0}%"
-            //    : "";
+            if (item == null)
+            {
+                Debug.LogWarning("[InvoSDK] FeatureWeeklyItemCard.SetData called with a null item.");
+                return;
+            }
 
-            // Async load image
-            if (!string.IsNullOrEmpty(item.image_url))
-                _ = APIManager.LoadSpriteAsync(item.image_url, iconImage);
+            SetText(itemNameText, item.display_name);
+            SetText(subtitleText, item.display_subtitle);
 
-            purchaseButton.onClick.RemoveAllListeners();
-            purchaseButton.onClick.AddListener(() => onPurchase?.Invoke(itemData));
+            // Real-money pack: USD is the correct label. Display only — the amount sent to the
+            // checkout endpoint is formatted with InvoFormat.Amount.
+            SetText(newPriceText, $"${item.price_usd:F2}");
+
+            if (oldPriceText != null)
+            {
+                bool hasOldPrice = item.original_price_usd.HasValue && item.original_price_usd.Value > item.price_usd;
+                oldPriceText.gameObject.SetActive(hasOldPrice);
+                if (hasOldPrice)
+                    oldPriceText.text = $"${item.original_price_usd.Value:F2}";
+            }
+
+            if (discountTagText != null)
+            {
+                bool hasDiscount = item.discount_percentage.HasValue && item.discount_percentage.Value > 0;
+                discountTagText.gameObject.SetActive(hasDiscount);
+                if (hasDiscount)
+                    discountTagText.text = $"-{item.discount_percentage.Value}%";
+            }
+
+            // https-only, size-capped loader: image_url is server-supplied data.
+            if (iconImage != null)
+                _ = InvoImageLoader.LoadIntoAsync(item.image_url, iconImage);
+
+            if (purchaseButton != null)
+            {
+                purchaseButton.onClick.RemoveAllListeners();
+                purchaseButton.onClick.AddListener(() => onPurchase?.Invoke(itemData));
+            }
+        }
+
+        private static void SetText(TMP_Text label, string value)
+        {
+            if (label != null)
+                label.text = value ?? string.Empty;
         }
     }
 }

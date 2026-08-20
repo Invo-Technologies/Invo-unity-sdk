@@ -20,14 +20,32 @@ namespace InvoSDK.UI
             itemData = item;
             onBuy = onClick;
 
-            itemNameText.text = item.display_name;
-            priceText.text = $"${item.price_usd:F2}";
+            if (item == null)
+            {
+                Debug.LogWarning("[InvoSDK] FeatureDailyItemCard.SetData called with a null item.");
+                return;
+            }
 
-            if (!string.IsNullOrEmpty(item.image_url))
-                _ = APIManager.LoadSpriteAsync(item.image_url, iconImage);
+            SetText(itemNameText, item.display_name);
+            // Real-money pack: USD is the correct label. Display only — the amount sent to the
+            // checkout endpoint is formatted with InvoFormat.Amount.
+            SetText(priceText, $"${item.price_usd:F2}");
 
-            buyButton.onClick.RemoveAllListeners();
-            buyButton.onClick.AddListener(() => onBuy?.Invoke(itemData));
+            // https-only, size-capped loader: image_url is server-supplied data.
+            if (iconImage != null)
+                _ = InvoImageLoader.LoadIntoAsync(item.image_url, iconImage);
+
+            if (buyButton != null)
+            {
+                buyButton.onClick.RemoveAllListeners();
+                buyButton.onClick.AddListener(() => onBuy?.Invoke(itemData));
+            }
+        }
+
+        private static void SetText(TMP_Text label, string value)
+        {
+            if (label != null)
+                label.text = value ?? string.Empty;
         }
     }
 }
