@@ -94,3 +94,19 @@ InitTestScene*.unity*
 /[Aa]ssets/Unity.VisualScripting.Generated/VisualScripting.Flow/UnitOptions.db.meta
 /[Aa]ssets/Unity.VisualScripting.Generated/VisualScripting.Core/Property Providers
 /[Aa]ssets/Unity.VisualScripting.Generated/VisualScripting.Core/Property Providers.meta
+
+# Player builds. The existing /[Bb]uild(s)/ patterns only match those exact folder
+# names at the repo root, so any prefixed variant (TestingBuilds/, DevBuild/) slips
+# through — and a Unity build embeds the SDK key from Resources into resources.assets.
+[Bb]uilds/
+[Bb]uild/
+*[Bb]uilds/
+*[Bb]uild/
+TestingBuilds/
+
+# The SDK config asset holds your game secret key. Committing it publishes that key,
+# which is exactly how this repo leaked one. Each developer configures their own copy
+# through InvoSDK > Setup Wizard. Force-add it only if your team has agreed the file
+# is key-free: git add -f Assets/InvoSDK/Resources/InvoSDKConfig.asset
+**/InvoSDKConfig.asset
+**/InvoSDKConfig.asset.meta
