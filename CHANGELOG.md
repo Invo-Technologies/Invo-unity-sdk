@@ -7,7 +7,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [0.2.0] — Unreleased
+## [0.2.0] — 2026-08-21
 
 Audit of the plugin against the live Invo API. Two flows were failing on every
 attempt and are now fixed; several call signatures changed as a result.
