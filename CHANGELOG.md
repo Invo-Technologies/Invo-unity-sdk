@@ -7,10 +7,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [0.2.0] — 2026-08-21
+## [2.0.0] — 2026-08-21
 
 Audit of the plugin against the live Invo API. Two flows were failing on every
 attempt and are now fixed; several call signatures changed as a result.
+
+Major version bump: this release is not source-compatible with 1.0.0. Existing
+integrations need the changes in the table below.
 
 ### Breaking
 
@@ -117,6 +120,6 @@ Method names and signatures changed. Existing integrations need updating.
 
 ---
 
-## [0.1.0] — 2025-12-05
+## [1.0.0] — 2025-12-05
 
 Initial public release.
