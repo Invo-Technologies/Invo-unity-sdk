@@ -53,6 +53,7 @@
 - [Security](#security)
 - [Server-Side Proxy](#server-side-proxy)
 - [Hosted Checkout (Real-Money Purchases)](#hosted-checkout-real-money-purchases)
+- [Hosted approval on mobile (system browser)](#hosted-approval-on-mobile-system-browser)
 - [Troubleshooting](#troubleshooting)
 - [Examples](#examples)
 - [Support](#support)
@@ -1122,6 +1123,143 @@ For an in-app completion signal you need native bridges — an iOS `WKScriptMess
 
 ---
 
+## Hosted approval on mobile (system browser)
+
+Transfers, sends and claims can be approved with a passkey on **Invo's hosted approval page** instead of an SMS PIN. On iOS and Android the plugin opens that page in the **system browser** and learns when it is done. Nothing in the plugin can move money: settlement happens on your server, with a value the client never sees.
+
+### Two halves
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                       HOSTED APPROVAL (MOBILE)                               │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  Unity                Your Server                 Invo API        Browser    │
+│    │                      │                          │               │       │
+│    │──"approve tx 123"───▶│                          │               │       │
+│    │                      │─POST /api/sdk/approvals/device/begin──▶  │       │
+│    │                      │  {transaction_id, flow, channel:"app_browser"}   │
+│    │                      │◀─{device_code, verification_uri_complete,        │
+│    │                      │    user_code, expires_in, interval}      │       │
+│    │◀─handoff (NO device_code)                       │               │       │
+│    │                      │                          │               │       │
+│    │──InvoHostedApproval.OpenHostedApproval(verification_uri_complete)──▶│   │
+│    │                      │                          │◀──passkey─────│       │
+│    │                      │──poll (device_code)─────▶│               │       │
+│    │◀─poll relay {enrollment?}                       │               │       │
+│    │  match-code prompt → decision                   │               │       │
+│    │──decision───────────▶│─POST .../confirm-enrollment {device_code,decision}│
+│    │                      │                          │               │       │
+│    │◀════ invo-sdk-<game_id>://done  (carries NOTHING) ═════════════│       │
+│    │──"poll now"─────────▶│──poll → approved────────▶│               │       │
+│    │                      │─POST /transfers/<id>/approve {device_code}──▶    │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Server half (yours).** Call `POST /api/sdk/approvals/device/begin` with `{transaction_id, flow, "channel": "app_browser"}`. The response is RFC 8628-shaped: keep `device_code` on the server — it is what polls and what settles — and hand the client only `verification_uri_complete`, `user_code`, `expires_in` and `interval` (`HostedApprovalHandoff`). **Start polling on `interval` the moment `begin` returns**, not when the client says the page is done: the page can finish while the game is backgrounded, and the return signal is only a hint to poll sooner. When the poll says approved, call the approve endpoint with `device_code`.
+
+**Client half (this plugin).** `InvoHostedApproval` does two things and nothing else:
+
+```csharp
+using InvoSDK;
+
+public class ApprovalScreen : MonoBehaviour
+{
+    void OnEnable()
+    {
+        InvoHostedApproval.ApprovalPageFinished += OnPageFinished;
+        // Cold start: the browser returned while the game was not running. The plugin's
+        // startup listener latched it; nobody was subscribed yet.
+        if (InvoHostedApproval.HasPendingReturn) OnPageFinished();
+    }
+
+    void OnDisable()  { InvoHostedApproval.ApprovalPageFinished -= OnPageFinished; }  // always unsubscribe
+
+    void Approve(HostedApprovalHandoff handoff)   // handoff came from YOUR server's begin call
+    {
+        // iOS: an authentication session (a system-owned sheet; Safari on <13).
+        // Android: Custom Tabs when androidx.browser is in the build, else the default browser.
+        // Never an embedded WebView: WebAuthn does not run in one, so the passkey ceremony
+        // would fail before it started.
+        if (!InvoHostedApproval.OpenHostedApproval(handoff.verification_uri_complete))
+            ShowFallbackCode(handoff.user_code);   // https + numeric gameId are required
+    }
+
+    void OnPageFinished()
+    {
+        InvoHostedApproval.ClearPendingReturn();
+        MyServer.PollSoonerPlease();   // wake-up only; your server was already polling
+    }
+}
+```
+
+- `ApprovalPageFinished` fires when the page navigates to `invo-sdk-<game_id>://done`, when the iOS sheet closes, or when the game comes back to the foreground while a return is outstanding (a back-press out of a Custom Tab, a browser that refuses the custom scheme, another app that owns it — the game never hangs). It means **"poll now"** — never "approved". Approved, denied and expired all return on the same bare URL; the truth is your server's poll. The plugin reads nothing beyond the scheme, so a value smuggled onto the URL cannot tell the game anything.
+- `HasPendingReturn` is the same signal as a latch, for the cold start and for any scene that subscribes late. Clear it once you have acted on it.
+- `ApprovalPageDismissed` (iOS only) fires when the player swipes the sheet away. Still poll; the phone may have finished on its own. If the grant is still pending, reopen the **same** `verification_uri_complete` — it is valid until `expires_in`.
+- `Cancel()` cancels the iOS sheet and stops waiting; neither event fires for a session the game cancelled itself.
+- Games with their own deep-link plumbing can call `InvoHostedApproval.HandleDeepLink(url)` or `NotifyApprovalPageFinished()` instead.
+
+### First-time phones: no prompt on mobile
+
+For `channel: "app_browser"` the phone running the page **is** the device that opened it, so Invo **auto-confirms** the enrolment: the poll goes straight from pending to approved and the game shows nothing. There is no "dismiss the sheet, answer on the game screen, reopen" dance on mobile.
+
+The match-code prompt API below exists for games that run the same flow on a screen that is *not* the phone (tablet/desktop builds of a mobile title, where the poll carries `enrollment: {state, device_label, match_code, requested_at}`). It is not required on iOS/Android.
+
+| `state` | The plugin shows | Player action |
+|---|---|---|
+| `awaiting_screen` | "Set up INVO on "`<device_label>`"? Code `<match_code>`. Say Yes only if the phone you just opened shows this code." with **Yes** / **No** | Decision goes to your server as `approve` / `deny` |
+| `confirmed` | "Finishing on "`<device_label>`"…" with one button, **Stop it (wrong code)** | Stop sends `deny` — the server lets a deny override a pending confirm |
+| `denied` / absent | nothing | — |
+
+```csharp
+// Each poll tick, relay the poll's `enrollment` block (null when absent). The plugin
+// shows the prompt, hides it, or does nothing when the block is unchanged.
+InvoHostedApproval.ApplyEnrollmentState(poll.enrollment, decision =>
+    MyServer.ConfirmEnrollment(InvoHostedApprovalCore.DecisionWire(decision)));  // "approve" | "deny"
+```
+
+`ShowEnrollmentPrompt(label, code, onDecision)` and `ShowEnrollmentFinishing(label, onStop)` are also callable directly. The default surface is an IMGUI overlay (`InvoEnrollmentPromptOverlay`) that needs no prefab or canvas; it dims the screen visually but does not block uGUI / Input System touches underneath. To draw the prompt in your own UI (uGUI, UI Toolkit, TMP), implement `IInvoEnrollmentPromptView` and assign `InvoHostedApproval.PromptView` — the copy and labels are passed in, so your view only lays them out. Labels and codes come from the server and are sanitised for display (tags, control and Unicode format characters removed; the label is capped at 32 characters and quoted, codes at 64).
+
+### Registering the return scheme
+
+The return scheme is `invo-sdk-<gameId>`, derived from the numeric `gameId` in `InvoSDKConfig` and nothing else; the server derives the same value. `InvoHostedApprovalBuildPostprocessor` registers it automatically on every iOS and Android build (idempotent). If you maintain your own `Info.plist` / `AndroidManifest.xml`, these are the equivalent snippets — replace `12345` with your game id:
+
+**iOS — `Info.plist`** (the postprocessor also links `AuthenticationServices.framework`; iOS 13+ for the authentication session, Safari below that):
+
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLName</key>
+    <string>invo-sdk-12345</string>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>invo-sdk-12345</string>
+    </array>
+  </dict>
+</array>
+```
+
+**Android — `AndroidManifest.xml`**, inside the launcher `<activity>`:
+
+```xml
+<intent-filter>
+  <action android:name="android.intent.action.VIEW" />
+  <category android:name="android.intent.category.DEFAULT" />
+  <category android:name="android.intent.category.BROWSABLE" />
+  <data android:scheme="invo-sdk-12345" />
+</intent-filter>
+```
+
+Custom Tabs are optional. Add `implementation 'androidx.browser:browser:1.8.0'` to your `mainTemplate.gradle` dependencies to get them; without it the plugin uses the default browser, which works the same way. A custom scheme can be claimed by another app on Android; that is why the callback carries nothing.
+
+### What the plugin does not do
+
+- It never holds `device_code`, never polls Invo directly, and never calls the approve endpoint. Those belong to your server.
+- It does not open the page in the bundled `WebViewObject` or any WebView.
+- It does not decide anything from the return URL.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
@@ -1414,6 +1552,7 @@ public class SendController : MonoBehaviour
 - `StartBalancePolling()` / `StopBalancePolling()`.
 - `checkoutSessionEndpoint` and the hosted-checkout flow.
 - `verification_method` and guardian-approval handling in the bundled panels.
+- `InvoHostedApproval`: system-browser passkey approval on iOS/Android with the `invo-sdk-<gameId>://done` return, the match-code prompt (`IInvoEnrollmentPromptView` + IMGUI default), and a build postprocessor that registers the scheme. See [Hosted approval on mobile](#hosted-approval-on-mobile-system-browser).
 
 ### Version 1.0.0
 
