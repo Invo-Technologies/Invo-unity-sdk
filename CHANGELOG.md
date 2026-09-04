@@ -7,6 +7,26 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Hosted approval on mobile.** `InvoHostedApproval.OpenHostedApproval(url)` opens Invo's
+  hosted approval page in the system browser (iOS authentication session, Android Custom
+  Tabs when `androidx.browser` is present, default browser otherwise; never a WebView) and
+  fires `ApprovalPageFinished` when the page returns on `invo-sdk-<gameId>://done`. The
+  return carries nothing; the game polls its own server. A foreground return while waiting
+  counts as the return, `HasPendingReturn` latches a cold-start return, and `Cancel()` is silent.
+- `InvoHostedApproval.ApplyEnrollmentState` / `ShowEnrollmentPrompt` / `ShowEnrollmentFinishing` (not needed on mobile, where app_browser enrolment is auto-confirmed):
+  the first-time-phone match-code prompt, drawn on an IMGUI overlay by default or on your own
+  `IInvoEnrollmentPromptView`.
+- `HostedApprovalHandoff` and `EnrollmentInfo` models; `InvoHostedApprovalCore` pure helpers.
+- `InvoHostedApprovalBuildPostprocessor` registers the return scheme in `Info.plist` (and links
+  `AuthenticationServices.framework`) and in the Android manifest at build time.
+- EditMode tests under `Assets/InvoSDK/Tests/Editor`.
+
+---
+
 ## [2.0.0] — 2026-08-21
 
 Audit of the plugin against the live Invo API. Two flows were failing on every

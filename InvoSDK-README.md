@@ -316,6 +316,8 @@ For in-app completion signals you need native bridges — an iOS `WKScriptMessag
 
 Nothing breaks without it — SMS PIN remains the fallback. But no Unity title can be switched onto in-app approval as things stand.
 
+**One path IS implemented: the hosted approval page on mobile.** `InvoHostedApproval` opens Invo's passkey page in the system browser and shows the match-code prompt; your server owns `begin` (with `channel: "app_browser"`), the poll, `confirm-enrollment` and the approve call, and the client never sees `device_code`. See README.md → [Hosted approval on mobile](README.md#hosted-approval-on-mobile-system-browser). The native device-signature path below is still not implemented.
+
 Four things that will save you time:
 
 - **The master flag defaults to off**, with a per-game switch on top. Handle `403 TENANT_NOT_MIGRATED` and `503 sdk_verification_disabled` as distinct, non-retryable states, and coordinate with Invo to enable your game.
