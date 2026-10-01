@@ -7,9 +7,78 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [Unreleased]
+## [3.0.0] — 2026-10-01
+
+Invo retired SMS verification. Sends and transfers are now approved on the player's
+phone with INVO's device approval grant (RFC 8628). Built against `invo-backend-api`
+`origin/develop` @ `3c892305` and the `@invonetwork/web-sdk` 3.19 reference client.
+
+> **⚠️ Action required: update your UI.** This release was written and compile-checked
+> without the Unity editor. **No scene or prefab was changed.** The send and transfer panels
+> have new fields to wire and old SMS widgets to remove. Follow
+> [InvoSDK-README.md → Updating your UI for 3.0.0](InvoSDK-README.md#updating-your-ui-for-300).
+
+### Breaking
+
+- **Production builds no longer send the game secret.** Every call that needs
+  `X-Game-Secret-Key` goes to the new `InvoSDKConfig.gameServerUrl` as
+  `<gameServerUrl>/api/<Invo path>`. Your server attaches the key and forwards the call.
+  With no game server, production calls throw `InvoApiException` with
+  `SDK_GAME_SERVER_REQUIRED`. Sandbox builds may still use `sdkKey` directly. See
+  README → Server-side proxy for the allow-list.
+- **The panels' step 3 is a phone approval, not an SMS code.** `SenderCurrencyPanel`
+  and `TransferCurrencyPanel` gained `approvalView` and `retryApprovalButton`, and
+  `SenderCurrencyPanel` gained `collectPendingButton` and `collectPendingText`. The SMS
+  fields are kept only so old prefabs load, and are hidden at runtime.
+- `VerifySendSmsAsync`, `VerifyTransferSmsAsync`, `ResendSendPinAsync` and
+  `ResendTransferPinAsync` are `[Obsolete]`. The panels no longer call them.
+- `InvoApiException.ErrorCode` now reads `code`, then `error_code`, then a bare-token
+  `error`. Before, it read `error_code` only, which left every `/api/sdk/*` error code null.
+- The send panel's step 4 no longer shows the sender a claim code. A send's code goes to
+  the receiver.
 
 ### Added
+
+- **QR phone approval.** `InvoDeviceApproval.RunAsync(transactionId, flow)` runs the whole
+  approval:
+  - begin;
+  - a QR on desktop, Steam and consoles, or the system browser on iOS and Android;
+  - the RFC 8628 poll, honouring `interval` and `slow_down`;
+  - the first-time-phone match-code prompt on the game screen;
+  - the settle call that moves the money (`/sdk/{transfers|send}/{id}/approve` or
+    `/confirm-receipt` with `device_code`).
+
+  Every stage uses the player token.
+- `InvoQrCode` / `InvoQrTexture`: a dependency-free QR encoder (byte mode, versions 1–40).
+  It was cross-checked module-for-module against `qrcode-generator` on 391 inputs across
+  all versions and error-correction levels.
+- `IInvoDeviceApprovalView`, `InvoDeviceApprovalPanelView` (uGUI) and
+  `InvoDeviceApprovalOverlay` (IMGUI fallback).
+- `InvoApprovalStep` (UI): the shared verification step. It waits out guardian and review
+  holds, and reads the transaction status back after any ambiguous settle failure before
+  reporting.
+- **Receiver collect.** The claim panel's Collect button collects a pending send with
+  `send_receipt`, using the receiver's own approval. The claim code is now the fallback.
+- **Player session.** `SetActivePlayer` (re-scopes and drops the previous token),
+  `GetPlayerTokenAsync` (cached, re-minted early, one automatic retry on
+  `401 SDK_TOKEN_*`), `PlayerTokenProvider`, `GameServerRequestDecorator`, and
+  `GetPendingActionsAsync`.
+- `APIManager` stage methods: `BeginDeviceApprovalAsync`, `PollDeviceApprovalAsync`,
+  `ConfirmDeviceEnrollmentAsync`, `SettleDeviceApprovalAsync`. `TRANSACTION_NOT_PENDING`
+  maps to `not_pending` with a fail-closed `already_settled`.
+- Setup Wizard: a Game Server URL field, and a warning when production has none.
+- EditMode tests: QR known-answer and structure, the settled-status allow-list, poll
+  pacing, channel choice, and pending-item routing.
+
+### Fixed
+
+- `InvoSDKTestPurchaseWindow` imported `Unity.Plastic.Newtonsoft.Json`, the copy bundled
+  inside the Version Control package. Projects without that package failed to compile. It
+  now uses `Newtonsoft.Json`.
+- `retry_after` holding an ISO timestamp (the passkey-recovery cooldown) no longer hides
+  `retry_after_seconds`.
+
+### Hosted approval on mobile (previously unreleased)
 
 - **Hosted approval on mobile.** `InvoHostedApproval.OpenHostedApproval(url)` opens Invo's
   hosted approval page in the system browser (iOS authentication session, Android Custom

@@ -10,6 +10,13 @@ using static InvoSDK.TransferResponse;
 
 namespace InvoSDK.UI
 {
+    /// <summary>
+    /// Four-step TRANSFER flow: the player moves their own balance to another game.
+    ///   Step 1  Destination + amount    Step 2  Review
+    ///   Step 3  Approval on the phone: a QR (desktop, Steam, console) or the INVO page in the
+    ///           system browser (iOS, Android). No SMS code.
+    ///   Step 4  Approved - collect it in the destination game
+    /// </summary>
     public class TransferCurrencyPanel : MonoBehaviour
     {
         [Header("Step Panels")]
@@ -61,16 +68,22 @@ namespace InvoSDK.UI
         public TMP_Text reviewFeeText;
         public TMP_Text reviewReceiverGetsText;
 
-        [Header("Step 3 - Verification")]
-        public VerificationCodeInput verificationCodeInput;
+        [Header("Step 3 - Phone Approval (replaces the SMS code)")]
+        [Tooltip("The QR / approval view, ideally inside inAppApprovalGroup. Leave empty to use the built-in overlay.")]
+        public InvoDeviceApprovalPanelView approvalView;
+        [Tooltip("Shown after a decline, an expired code or a cancel: shows a fresh QR for the same transfer.")]
+        public Button retryApprovalButton;
         public TMP_Text verificationStatusText;
+        [Tooltip("Container shown while the player approves on their phone.")]
+        public GameObject inAppApprovalGroup;
+        [Tooltip("Instruction line for the approval.")]
+        public TMP_Text inAppApprovalText;
+
+        [Header("Step 3 - LEGACY SMS widgets (hidden at runtime; remove from your prefab)")]
+        public VerificationCodeInput verificationCodeInput;
         public GameObject smsVerificationGroup;
         public Button resendPinButton;
         public TMP_Text resendPinLabelText;
-
-        [Header("Step 3 - In-App Approval (optional)")]
-        public GameObject inAppApprovalGroup;
-        public TMP_Text inAppApprovalText;
 
         [Header("Step 3 - Guardian Approval (optional)")]
         public GameObject guardianApprovalGroup;
@@ -88,16 +101,11 @@ namespace InvoSDK.UI
         public Button step2PrevButton;
         public Button step2NextButton;
         public Button step3PrevButton;
+        [Tooltip("LEGACY: submitted the SMS code. Hidden at runtime.")]
         public Button step3VerifyButton;
         public Button step4CloseButton;
 
         // ---------------- CONSTANTS ----------------
-        private const string VerificationMethodSms = "sms";
-        private const string VerificationMethodInApp = "in_app";
-        private const string VerificationStateApproved = "approved";
-        private const float PollIntervalSeconds = 6f;
-        private const float PollTimeoutSeconds = 600f;
-        private const float ResendCooldownSeconds = 30f;
         private const string ReadmeHint = "See the InvoSDK README (\"Flows not implemented in the plugin\").";
 
         private List<TransferResponse.AvailableGame> availableGames = new();
@@ -108,13 +116,10 @@ namespace InvoSDK.UI
 
         private string _transactionId;
         private string _clientRequestId;          // minted once per confirmed intent, reused across retries
-        private string _verificationMethod;
         private bool _isProcessing;               // initiate in flight
-        private bool _isVerifying;                // verify in flight (the PIN limit is 3 attempts)
-        private bool _isResending;
+        private bool _isApproving;                // phone approval in flight
+        private bool _isWaiting;                  // guardian / recipient hold in flight
         private bool _listenersBound;
-        private float _resendAvailableAt;
-        private int _lastCooldownShown = -1;
         private CancellationTokenSource _pollCts;
 
         private void Awake()
@@ -138,9 +143,8 @@ namespace InvoSDK.UI
             if (step2PrevButton != null) step2PrevButton.onClick.AddListener(() => ChangeStep(1));
             if (step2NextButton != null) step2NextButton.onClick.AddListener(() => { _ = OnInitiateTransferClicked(); });
             if (step3PrevButton != null) step3PrevButton.onClick.AddListener(OnStep3BackClicked);
-            if (step3VerifyButton != null) step3VerifyButton.onClick.AddListener(() => { _ = OnVerifyTransferClicked(); });
             if (step4CloseButton != null) step4CloseButton.onClick.AddListener(OnCloseClicked);
-            if (resendPinButton != null) resendPinButton.onClick.AddListener(() => { _ = OnResendPinClicked(); });
+            if (retryApprovalButton != null) retryApprovalButton.onClick.AddListener(OnRetryApprovalClicked);
 
             if (amountInputField != null) amountInputField.onValueChanged.AddListener(_ => UpdateAmounts());
             if (senderPhoneInput != null) senderPhoneInput.onValueChanged.AddListener(_ => ValidateStep1());
@@ -155,12 +159,11 @@ namespace InvoSDK.UI
             RequireField(receiverPhoneInput, nameof(receiverPhoneInput));
             RequireField(verificationStatusText, nameof(verificationStatusText));
             RequireField(amountInputField, nameof(amountInputField));
-            RequireField(verificationCodeInput, nameof(verificationCodeInput));
             RequireField(toGameDropdown, nameof(toGameDropdown));
 
             if (claimCodeText == null)
                 Debug.LogWarning("[InvoSDK] TransferCurrencyPanel.claimCodeText is not assigned. " +
-                                 "The recipient cannot complete a transfer without seeing the claim code.");
+                                 "The fallback claim code for the destination game will not be shown.");
         }
 
         private static bool TryGetApi(out APIManager api)
@@ -186,8 +189,6 @@ namespace InvoSDK.UI
         private void OnDisable() => CancelPolling();
 
         private void OnDestroy() => CancelPolling();
-
-        private void Update() => UpdateResendButton();
 
         // ---------------- STEP MANAGEMENT ----------------
         private void ShowStep(int step)
@@ -506,6 +507,14 @@ namespace InvoSDK.UI
         {
             if (_isProcessing) return;
 
+            // Never a second reservation for the same intent: confirming again re-shows the
+            // approval for the transfer that already exists.
+            if (!string.IsNullOrEmpty(_transactionId))
+            {
+                StartApproval();
+                return;
+            }
+
             if (config == null)
             {
                 SetVerificationStatus("Invo isn't configured in this build.");
@@ -554,8 +563,8 @@ namespace InvoSDK.UI
 
                 var data = await api.InitiateTransferAsync(
                     _clientRequestId,
-                    config.playerName,
-                    config.playerEmail,
+                    api.GetPlayerName(),
+                    api.GetPlayerEmail(),
                     sourcePhone,
                     targetPhone,
                     null,                       // the recipient's email is not collected by this panel
@@ -584,8 +593,7 @@ namespace InvoSDK.UI
 
         /// <summary>
         /// A 2xx is not success. The outcome lives in the status STRING: a 202 means the transfer is
-        /// parked waiting on a guardian, and showing the PIN screen there asks the player for a code
-        /// that was never sent.
+        /// parked waiting on a guardian, and the player cannot approve until it clears.
         /// </summary>
         private void HandleInitiateResponse(InitiateTransferResponse data)
         {
@@ -597,9 +605,6 @@ namespace InvoSDK.UI
             }
 
             _transactionId = data.transaction_id;
-            _verificationMethod = string.IsNullOrEmpty(data.verification_method)
-                ? VerificationMethodSms
-                : data.verification_method.Trim().ToLowerInvariant();
 
             ApplyFeesPreview(data.transfer_details?.fees_preview);
             ChangeStep(3);
@@ -607,7 +612,7 @@ namespace InvoSDK.UI
             if (data.status == InvoStatus.PendingGuardianApproval)
             {
                 ShowGuardianApprovalState(data.guardian_approval);
-                StartPolling(guardianStage: true);
+                _ = WaitThenApproveAsync(_transactionId);
                 return;
             }
 
@@ -619,9 +624,19 @@ namespace InvoSDK.UI
                 return;
             }
 
-            if (data.status == InvoStatus.Success || data.status == InvoStatus.PendingConfirmation)
+            if (data.status == InvoStatus.PendingConfirmation)
             {
-                BeginVerification(data.verification_expires_at);
+                ShowVerificationGroup(guardianApprovalGroup);
+                SetText(guardianApprovalText, "We are confirming the recipient's details. You can approve as soon as that finishes.");
+                _ = WaitThenApproveAsync(_transactionId);
+                return;
+            }
+
+            // verification_method is "in_app" or "sms". Both are approved on the phone now; "sms"
+            // only means Invo also texted a legacy PIN, which this panel no longer asks for.
+            if (data.status == InvoStatus.Success)
+            {
+                StartApproval();
                 return;
             }
 
@@ -654,200 +669,152 @@ namespace InvoSDK.UI
             {
                 // Same client_request_id, already accepted: not a new failure. Keep the intent so the
                 // player can carry on verifying the transfer that already exists.
-                SetVerificationStatus("This transfer was already started. Enter the code you were sent, or " +
-                                      "close and check your balance.");
+                SetVerificationStatus("This transfer was already started. Close and check your balance " +
+                                      "before trying again.");
                 return;
             }
 
             SetVerificationStatus(DescribeApiError(ex, "Invo couldn't start this transfer. Try again."));
         }
 
-        // ---------------- STEP 3: VERIFICATION ROUTING ----------------
-        private void BeginVerification(string expiresAt)
+        // ---------------- STEP 3: PHONE APPROVAL (replaces the SMS PIN) ----------------
+        private void OnRetryApprovalClicked() => StartApproval();
+
+        private void StartApproval()
         {
-            if (_verificationMethod == VerificationMethodInApp)
+            if (_isApproving || string.IsNullOrEmpty(_transactionId)) return;
+            if (_isWaiting)
             {
-                // No proactive SMS PIN is sent for in_app, so the PIN screen would strand the player
-                // waiting on a text that never arrives.
-                // TODO: the in-app approve/decline endpoints are not implemented in this plugin;
-                // polling the transfer status is the interim behaviour - see the README.
-                ShowVerificationGroup(inAppApprovalGroup);
-                SetText(inAppApprovalText, "Open the Invo app and approve this transfer. No text message " +
-                                           "is sent for this account." + FormatExpiry(expiresAt));
-                SetVerificationStatus("Waiting for you to approve the transfer in the Invo app...");
-                StartPolling(guardianStage: false);
+                ChangeStep(3);
+                SetVerificationStatus("This transfer is still on hold. You can approve it as soon as the hold clears.");
+                return;
+            }
+            string transactionId = _transactionId;
+            _ = RunApprovalAsync(transactionId);
+        }
+
+        private async Task RunApprovalAsync(string transactionId)
+        {
+            if (_isApproving) return;
+            _isApproving = true;
+            ChangeStep(3);
+            ShowVerificationGroup(inAppApprovalGroup);
+            SetRetryVisible(false);
+            SetText(inAppApprovalText, Application.isMobilePlatform
+                ? "Approve this transfer on the INVO page that opens. No code is texted to you."
+                : "Scan the QR code with your phone and approve with your passkey. No code is texted to you.");
+            SetVerificationStatus(string.Empty);
+
+            try
+            {
+                CancelPolling();
+                _pollCts = new CancellationTokenSource();
+                var result = await InvoApprovalStep.ApproveAsync(
+                    transactionId, InvoApprovalFlow.Transfer, approvalView,
+                    id => APIManager.Instance.GetTransferStatusAsync(id), SetVerificationStatus, _pollCts.Token);
+                if (this == null || _transactionId != transactionId) return;
+                ApplyApprovalResult(result);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[InvoSDK] Transfer approval error: {ex.Message}");
+                SetVerificationStatus("Something went wrong approving the transfer. Check your balance, then try again.");
+                SetRetryVisible(true);
+            }
+            finally
+            {
+                _isApproving = false;
+            }
+        }
+
+        private void ApplyApprovalResult(InvoApprovalStepResult result)
+        {
+            if (result.Approved)
+            {
+                ShowClaimCode(result.ClaimCode, result.ClaimCodeExpiresAt);
+                ShowConfirmation("Transfer approved",
+                    $"Collect it in {selectedToGame?.game_name ?? "the other game"}.");
+                ClearTransferIntent();
+                if (APIManager.Instance != null) APIManager.Instance.StartBalancePolling();
                 return;
             }
 
-            ShowVerificationGroup(smsVerificationGroup);
-            SetVerificationStatus("Enter the SMS code sent to your phone." + FormatExpiry(expiresAt));
-            _resendAvailableAt = Time.realtimeSinceStartup + ResendCooldownSeconds;
+            if (result.Cancelled)
+            {
+                if (!isActiveAndEnabled) return;
+                SetVerificationStatus("Approval stopped. Nothing was transferred. You can show the code again.");
+                SetRetryVisible(true);
+                return;
+            }
+
+            if (result.CanRetry)
+            {
+                SetVerificationStatus(result.Message);
+                SetRetryVisible(true);
+            }
+            else
+            {
+                ShowTerminalFailure(result.Message);
+            }
+        }
+
+        private void SetRetryVisible(bool visible)
+        {
+            if (retryApprovalButton != null) retryApprovalButton.gameObject.SetActive(visible);
         }
 
         private void ShowGuardianApprovalState(GuardianApproval approval)
         {
             ShowVerificationGroup(guardianApprovalGroup);
-            SetText(guardianApprovalText, "Waiting for a parent or guardian to approve this transfer in the " +
-                                          "Invo app." + FormatExpiry(approval?.expires_at));
+            SetText(guardianApprovalText, "Waiting for a parent or guardian to approve this transfer. " +
+                                          "Once they do, you approve it on your phone." + FormatExpiry(approval?.expires_at));
             SetVerificationStatus("Waiting for parent or guardian approval...");
+        }
 
-            if (approval != null && !string.IsNullOrEmpty(approval.poll_endpoint))
+        /// <summary>A guardian or a recipient check holds the transfer; the sender approves once it clears.</summary>
+        private async Task WaitThenApproveAsync(string transactionId)
+        {
+            if (_isWaiting) return;
+            _isWaiting = true;
+            CancelPolling();
+            _pollCts = new CancellationTokenSource();
+            try
             {
-                // TODO: APIManager exposes no generic GET for guardian_approval.poll_endpoint, so the
-                // approval is tracked through GetTransferStatusAsync instead - see the README.
-                Debug.Log("[InvoSDK] Guardian approval pending; polling transfer status.");
+                var waited = await InvoApprovalStep.WaitUntilApprovableAsync(
+                    transactionId, id => APIManager.Instance.GetTransferStatusAsync(id), _pollCts.Token);
+                if (this == null || _transactionId != transactionId) return;
+                if (waited == null)
+                {
+                    await RunApprovalAsync(transactionId);
+                    return;
+                }
+                ApplyApprovalResult(waited);
             }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[InvoSDK] Transfer hold wait error: {ex.Message}");
+                SetVerificationStatus("We lost track of this transfer. Check your balance before trying again.");
+            }
+            finally
+            {
+                _isWaiting = false;
+            }
+        }
+
+        /// <summary>The SMS code boxes may still be in an older prefab; keep them out of sight.</summary>
+        private void HideLegacySmsWidgets()
+        {
+            if (smsVerificationGroup != null) smsVerificationGroup.SetActive(false);
+            if (verificationCodeInput != null) verificationCodeInput.gameObject.SetActive(false);
+            if (resendPinButton != null) resendPinButton.gameObject.SetActive(false);
+            if (step3VerifyButton != null) step3VerifyButton.gameObject.SetActive(false);
         }
 
         private void ShowVerificationGroup(GameObject active)
         {
-            if (smsVerificationGroup != null) smsVerificationGroup.SetActive(active == smsVerificationGroup);
+            HideLegacySmsWidgets();
             if (inAppApprovalGroup != null) inAppApprovalGroup.SetActive(active == inAppApprovalGroup);
             if (guardianApprovalGroup != null) guardianApprovalGroup.SetActive(active == guardianApprovalGroup);
-        }
-
-        // ---------------- STEP 3: VERIFY (SMS PIN) ----------------
-        private async Task OnVerifyTransferClicked()
-        {
-            // Only 3 PIN attempts exist; a double tap used to burn two of them.
-            if (_isVerifying) return;
-
-            string pin = verificationCodeInput != null ? verificationCodeInput.GetFullCode() : null;
-            if (string.IsNullOrEmpty(pin) || string.IsNullOrEmpty(_transactionId))
-            {
-                SetVerificationStatus("Enter the code you were sent.");
-                return;
-            }
-
-            if (!TryGetApi(out var api))
-            {
-                SetVerificationStatus("Invo isn't available in this build.");
-                return;
-            }
-
-            _isVerifying = true;
-            SetInteractable(step3VerifyButton, false);
-
-            try
-            {
-                // Transfers verify on the transfers endpoint. The sends endpoint filters on
-                // transaction_type='currency_send', so a transfer id never matches there.
-                var result = await api.VerifyTransferSmsAsync(_transactionId, pin);
-
-                if (result != null && result.status == InvoStatus.Success)
-                {
-                    ShowClaimCode(result.claim_code, result.claim_instructions?.claim_code_expires_at);
-                    ShowConfirmation("Transfer Successful!", "Your transfer was verified successfully.");
-                    ClearTransferIntent();
-                }
-                else
-                {
-                    SetVerificationStatus("That code didn't work. Check the message and try again.");
-                }
-            }
-            catch (InvoApiException ex)
-            {
-                Debug.LogError($"[InvoSDK] Transfer verification failed: {ex}");
-                SetVerificationStatus(DescribeApiError(ex, "That code didn't work. Check the message and try again."));
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[InvoSDK] Transfer verification error: {ex.Message}");
-                SetVerificationStatus("Something went wrong verifying the transfer. Try again.");
-            }
-            finally
-            {
-                _isVerifying = false;
-                SetInteractable(step3VerifyButton, true);
-            }
-        }
-
-        // ---------------- STEP 3: RESEND PIN ----------------
-        private async Task OnResendPinClicked()
-        {
-            if (_isResending || string.IsNullOrEmpty(_transactionId)) return;
-            if (Time.realtimeSinceStartup < _resendAvailableAt) return;
-            if (!TryGetApi(out var api)) return;
-
-            _isResending = true;
-            SetInteractable(resendPinButton, false);
-
-            try
-            {
-                var result = await api.ResendTransferPinAsync(_transactionId);
-
-                if (result != null && result.status == InvoStatus.Resent)
-                {
-                    SetVerificationStatus("We sent a new code to your phone.");
-                    if (verificationCodeInput != null) verificationCodeInput.Clear();
-                }
-                else
-                {
-                    SetVerificationStatus("We couldn't send another code right now.");
-                }
-
-                _resendAvailableAt = Time.realtimeSinceStartup + ResendCooldownSeconds;
-            }
-            catch (InvoApiException ex)
-            {
-                Debug.LogError($"[InvoSDK] PIN resend failed: {ex}");
-
-                if (ex.StatusCode == 400 && ex.ErrorCode == "pin_expired")
-                {
-                    ShowTerminalFailure("That code expired. Start the transfer again to get a new one.");
-                }
-                else if (ex.StatusCode == 503 || ex.ErrorCode == "resend_unavailable")
-                {
-                    ShowTerminalFailure("We can't send codes right now. Start the transfer again in a few minutes.");
-                }
-                else
-                {
-                    SetVerificationStatus(DescribeApiError(ex, "We couldn't send another code right now."));
-                }
-
-                _resendAvailableAt = Time.realtimeSinceStartup + (ex.RetryAfterSeconds ?? (int)ResendCooldownSeconds);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[InvoSDK] PIN resend error: {ex.Message}");
-                SetVerificationStatus("We couldn't send another code right now.");
-                _resendAvailableAt = Time.realtimeSinceStartup + ResendCooldownSeconds;
-            }
-            finally
-            {
-                _isResending = false;
-            }
-        }
-
-        private void UpdateResendButton()
-        {
-            if (resendPinButton == null) return;
-
-            bool applicable = currentStep == 3
-                              && !_isResending
-                              && !string.IsNullOrEmpty(_transactionId)
-                              && _verificationMethod == VerificationMethodSms;
-
-            float remaining = _resendAvailableAt - Time.realtimeSinceStartup;
-            bool ready = applicable && remaining <= 0f;
-
-            if (resendPinButton.interactable != ready) resendPinButton.interactable = ready;
-
-            if (resendPinLabelText == null) return;
-
-            int shown = (!applicable || ready) ? 0 : Mathf.CeilToInt(remaining);
-            if (shown == _lastCooldownShown) return;
-
-            _lastCooldownShown = shown;
-            SetText(resendPinLabelText, shown > 0 ? $"Didn't get the code? ({shown}s)" : "Didn't get the code?");
-        }
-
-        // ---------------- APPROVAL POLLING ----------------
-        private void StartPolling(bool guardianStage)
-        {
-            CancelPolling();
-            _pollCts = new CancellationTokenSource();
-            _ = PollTransferStatusAsync(_transactionId, guardianStage, _pollCts.Token);
         }
 
         private void CancelPolling()
@@ -861,104 +828,6 @@ namespace InvoSDK.UI
             _pollCts = null;
         }
 
-        private async Task PollTransferStatusAsync(string transactionId, bool guardianStage, CancellationToken token)
-        {
-            if (string.IsNullOrEmpty(transactionId)) return;
-            if (!TryGetApi(out var api)) return;
-
-            float deadline = Time.realtimeSinceStartup + PollTimeoutSeconds;
-
-            try
-            {
-                while (!token.IsCancellationRequested && Time.realtimeSinceStartup < deadline)
-                {
-                    try
-                    {
-                        await Task.Delay(TimeSpan.FromSeconds(PollIntervalSeconds), token);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        return;
-                    }
-
-                    if (token.IsCancellationRequested || this == null) return;
-
-                    TransactionStatusResponse status;
-                    try
-                    {
-                        status = await api.GetTransferStatusAsync(transactionId);
-                    }
-                    catch (InvoApiException ex)
-                    {
-                        if (ex.IsNetworkError || ex.IsRateLimited || ex.StatusCode >= 500)
-                        {
-                            // Transient: keep waiting, and honour Retry-After when we were given one.
-                            if (ex.RetryAfterSeconds.HasValue)
-                            {
-                                try { await Task.Delay(TimeSpan.FromSeconds(ex.RetryAfterSeconds.Value), token); }
-                                catch (OperationCanceledException) { return; }
-                            }
-                            continue;
-                        }
-
-                        Debug.LogError($"[InvoSDK] Transfer status poll failed: {ex}");
-                        SetVerificationStatus(DescribeApiError(ex,
-                            "We lost track of this transfer. Check your balance before trying again."));
-                        return;
-                    }
-
-                    if (token.IsCancellationRequested) return;
-                    if (status == null) continue;
-
-                    if (guardianStage)
-                    {
-                        if (status.status == InvoStatus.PendingGuardianApproval) continue;
-
-                        if (status.status == InvoStatus.Success || status.status == InvoStatus.PendingConfirmation)
-                        {
-                            SetVerificationStatus("A guardian approved the transfer.");
-                            BeginVerification(null);
-                            return;
-                        }
-
-                        ShowTerminalFailure("This transfer wasn't approved by a parent or guardian.");
-                        return;
-                    }
-
-                    if (string.Equals(status.verification_state, VerificationStateApproved, StringComparison.OrdinalIgnoreCase)
-                        || status.status == InvoStatus.Success)
-                    {
-                        ShowClaimCode(status.claim_code, null);
-                        ShowConfirmation("Transfer Successful!", "You approved this transfer in the Invo app.");
-                        ClearTransferIntent();
-                        return;
-                    }
-
-                    if (IsTerminalRejection(status.verification_state) || IsTerminalRejection(status.transaction_status))
-                    {
-                        ShowTerminalFailure("This transfer was declined or expired before it was approved.");
-                        return;
-                    }
-                }
-
-                if (!token.IsCancellationRequested)
-                    SetVerificationStatus("This is taking longer than expected. Check the Invo app, then try again.");
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[InvoSDK] Transfer status polling error: {ex.Message}");
-            }
-        }
-
-        private static bool IsTerminalRejection(string state)
-        {
-            if (string.IsNullOrEmpty(state)) return false;
-
-            string s = state.Trim().ToLowerInvariant();
-            return s == "declined" || s == "rejected" || s == "expired" ||
-                   s == "cancelled" || s == "canceled" || s == "failed";
-        }
-
         // ---------------- STEP 4: CONFIRMATION ----------------
         private void ShowConfirmation(string title, string subtitle)
         {
@@ -970,7 +839,7 @@ namespace InvoSDK.UI
         }
 
         /// <summary>
-        /// The transfer cannot be completed without this code, so it is shown prominently.
+        /// The self-claim code from the approve call, for a destination game that collects by code.
         /// Never logged: Debug.Log persists to Player.log and logcat.
         /// </summary>
         private void ShowClaimCode(string claimCode, string expiresAt)
@@ -978,18 +847,16 @@ namespace InvoSDK.UI
             if (string.IsNullOrEmpty(claimCode))
             {
                 SetText(claimCodeText, string.Empty);
-                SetText(claimCodeExpiryText, "Invo will send the claim code to the recipient.");
+                SetText(claimCodeExpiryText, "Open the other game to collect it.");
                 return;
             }
 
-            if (claimCodeText == null)
-                Debug.LogError("[InvoSDK] TransferCurrencyPanel.claimCodeText is not assigned, so the claim code " +
-                               "cannot be shown. The recipient needs it to complete the transfer.");
-
+            // The destination game normally collects with its own phone approval; this code is the
+            // fallback for a game that asks for one.
             SetText(claimCodeText, claimCode);
             SetText(claimCodeExpiryText, string.IsNullOrEmpty(expiresAt)
-                ? "Give this claim code to the recipient."
-                : $"Give this claim code to the recipient. It expires {expiresAt}.");
+                ? "If the other game asks for a claim code, use this one."
+                : $"If the other game asks for a claim code, use this one. It expires {expiresAt}.");
         }
 
         private void ShowTerminalFailure(string message)
@@ -1029,7 +896,6 @@ namespace InvoSDK.UI
         {
             _transactionId = null;
             _clientRequestId = null;
-            _verificationMethod = null;
         }
 
         private void ResetPanel()
@@ -1045,7 +911,6 @@ namespace InvoSDK.UI
             if (receiverPhoneInput != null) receiverPhoneInput.text = string.Empty;
             if (senderPhoneInput != null)
                 senderPhoneInput.text = config != null && config.playerPhone != null ? config.playerPhone : string.Empty;
-            if (verificationCodeInput != null) verificationCodeInput.Clear();
 
             SetText(serviceFeeText, "-0.00");
             SetText(receiverGetsText, "0.00");
@@ -1056,10 +921,8 @@ namespace InvoSDK.UI
             SetText(claimCodeText, string.Empty);
             SetText(claimCodeExpiryText, string.Empty);
             SetVerificationStatus(string.Empty);
-            ShowVerificationGroup(smsVerificationGroup);
-
-            _resendAvailableAt = 0f;
-            _lastCooldownShown = -1;
+            ShowVerificationGroup(null);
+            SetRetryVisible(false);
 
             ShowStep(1);
             SetInteractable(step1NextButton, false);
@@ -1123,17 +986,11 @@ namespace InvoSDK.UI
                         message = "That number is shared with another Invo account and has to be approved with a " +
                                   "one-time code first. " + ReadmeHint;
                         break;
-                    case "pin_expired":
-                        message = "That code expired. Start the transfer again to get a new one.";
+                    case "TENANT_NOT_MIGRATED":
+                        message = "Phone approval is not enabled for this game yet. Contact Invo to enable it.";
                         break;
-                    case "resend_cooldown":
-                        message = "A code was just sent. Wait a moment before asking for another.";
-                        break;
-                    case "resend_unavailable":
-                        message = "We can't send codes right now. Try again in a few minutes.";
-                        break;
-                    case "invalid_pin":
-                        message = "That code isn't right. Check the message and try again.";
+                    case APIManager.GameServerRequiredCode:
+                        message = "This build is not connected to its game server.";
                         break;
                     default:
                         if (ex.StatusCode == 403) message = "Invo declined this transfer for this account.";

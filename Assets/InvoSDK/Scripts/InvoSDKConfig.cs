@@ -32,6 +32,15 @@ namespace InvoSDK
                  "carries an sdkKey — that ships a production secret to every player.")]
         public bool useProduction;
 
+        [Header("Game Server (required for production)")]
+        [Tooltip("Base URL of YOUR server, e.g. https://api.mygame.com.\n\n" +
+                 "Every call that needs the game secret (initiate send/transfer, item purchase, catalog, " +
+                 "balance, claims, minting player tokens) is sent to <this URL>/api/<Invo path> instead " +
+                 "of to Invo. Your server checks the player's session, adds X-Game-Secret-Key and forwards " +
+                 "it to Invo unchanged. Blank = call Invo directly with sdkKey, which the SDK only allows " +
+                 "in sandbox. See the README, 'Server-side proxy'.")]
+        public string gameServerUrl;
+
         [Header("Hosted Checkout")]
         [Tooltip("URL of YOUR OWN server endpoint that mints a hosted-checkout session.\n\n" +
                  "Real-money purchases cannot be made from the client: the Invo secret must stay " +

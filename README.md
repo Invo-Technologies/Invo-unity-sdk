@@ -30,6 +30,14 @@
 >
 > This plugin is a **client**. Several flows need a server that you host, and one of them — real-money purchases — cannot function at all until you build it. The honest, complete list of what is not in the box lives in **[InvoSDK-README.md → What You Must Wire Yourself](InvoSDK-README.md#what-you-must-wire-yourself)**. This document is the longer tutorial; that one is the specification. Where they differ, that one wins.
 
+> ## ⚠️ Action required in 3.0.0: update your UI
+>
+> **SMS verification has been removed.** Sends and transfers are now approved on the player's phone: a **QR code** on desktop, Steam and console builds, and **INVO's page in the system browser** on iOS and Android. No code is texted, and nothing is typed.
+>
+> **Developers must update their scenes and prefabs by hand.** 3.0.0 was written and compile-checked without the Unity editor, so no scene or prefab in this repository was changed. `SenderCurrencyPanel` and `TransferCurrencyPanel` still contain the old SMS code boxes, and the new fields (`approvalView`, `retryApprovalButton`, `collectPendingButton`, `collectPendingText`) are unassigned. The panels hide the legacy widgets and fall back to a plain built-in QR overlay, so nothing crashes, but it will not look like your game. **Follow the checklist in [InvoSDK-README.md → Updating your UI for 3.0.0](InvoSDK-README.md#updating-your-ui-for-300) before you ship.**
+>
+> **Production now needs your game server.** The SDK no longer sends the game secret from a production build; set `gameServerUrl`. See [Server-Side Proxy](#server-side-proxy).
+
 ---
 
 ## Contents
@@ -110,8 +118,8 @@ It is a thin, honest transport layer plus a set of reference UI panels. It is no
 │  │   Sandbox    │  │  Production  │  │    Hosted    │  │  Sends and   │     │
 │  │ Environment  │  │ Environment  │  │   Checkout   │  │  Transfers   │     │
 │  │              │  │              │  │              │  │              │     │
-│  │ Test cards   │  │ Real money   │  │ Signed URL,  │  │ SMS PIN +    │     │
-│  │ Isolated DB  │  │ Isolated DB  │  │ 15-min TTL   │  │ claim code   │     │
+│  │ Test cards   │  │ Real money   │  │ Signed URL,  │  │ QR / phone   │     │
+│  │ Isolated DB  │  │ Isolated DB  │  │ 15-min TTL   │  │ approval     │     │
 │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘     │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -129,7 +137,8 @@ Sandbox and production are **fully isolated databases with independent SDK keys*
 |---------|-------------|
 | **Player Balances** | Per-currency balances, single-flight polling with exponential backoff |
 | **Item Purchases** | Spend in-game currency, `decimal` prices, caller-supplied idempotency key |
-| **P2P Sends** | Phone-addressed sends with SMS PIN verification and a claim code |
+| **P2P Sends** | Phone-addressed sends, approved on the sender's phone by QR; the receiver collects with their own approval |
+| **Phone Approval** | QR on desktop / Steam / console, system browser on iOS / Android (RFC 8628 device grant). No SMS. |
 | **Cross-Game Transfers** | Move a player's own balance to another game on the network |
 | **Hosted Checkout** | Real-money packs via a checkout session your server mints |
 | **Reference UI** | Panels for purchase, send and transfer that you can read, fork or replace |
@@ -339,26 +348,30 @@ The two API roots are compile-time constants in `APIManager`, not Inspector fiel
 
 ## Authentication
 
-**There is no login flow, and there is nothing to implement.**
+There are **two credentials**, and they are never mixed.
 
-Every request carries exactly one credential:
+| | Game secret | Player token |
+|---|---|---|
+| Header | `X-Game-Secret-Key: ivsdk_…` | `Authorization: Bearer <token>` |
+| Authenticates | your **game** | one **player**, for 15 minutes |
+| Used for | initiate send/transfer, item purchase, catalog, balance, claims, minting player tokens | the phone approval (QR), the approve / confirm-receipt calls that move money, the pending list |
+| Lives | on **your server** (production); in `sdkKey` (sandbox only) | on the device; minted and re-minted by the SDK |
 
+In production every game-secret call goes to `<gameServerUrl>/api/<Invo path>`, and your server adds the key. In sandbox, with no `gameServerUrl`, the SDK may call Invo directly with `sdkKey`. It refuses to do that in production.
+
+(`POST /v1/game-items/list` reads its secret from the request body as `game_secret`, not from the header. `APIManager` adds it in sandbox; your server adds it in production.)
+
+### Player tokens
+
+```csharp
+APIManager.Instance.SetActivePlayer(email, name, phone);   // on login and on account switch
 ```
-X-Game-Secret-Key: ivsdk_…
-```
 
-(`POST /v1/game-items/list` additionally repeats the secret in the request body as `game_secret`, because the backend's validator for that one route reads the body rather than the header. `APIManager` does this for you.)
+The SDK mints a token through `POST /api/sdk/player-token` the first time a token-authed call needs one. In production that goes through your game server. It caches the token, re-mints it a minute before expiry, and on a `401 SDK_TOKEN_*` re-mints once and retries. There is no refresh endpoint, and the player is never prompted. To mint through your own login API instead, set `APIManager.PlayerTokenProvider`.
 
 ### What was removed, and why
 
-Earlier versions of this plugin performed a `/auth/login` + `/auth/csrf-token` handshake and attached `Authorization: Bearer` and `X-CSRF-Token` to every call. That entire flow has been **deleted**, along with the `playerPassword` config field it required. It was verified inert:
-
-- The game API endpoints authenticate **solely** on `X-Game-Secret-Key`. They never read the bearer or CSRF headers.
-- `/auth/login` authenticates against the **developer-console account table**, not against players. It was never a player login in the first place.
-
-So: no tokens to store, no refresh to schedule, no cookies to persist, no re-authentication path to write. If you are porting from an older integration, delete all of it. Anything that still calls `/auth/*` or `/sandbox/auth/*` from a game client is doing nothing except leaking a password into a build.
-
-Authentication failures are therefore a **configuration** problem, never a session problem — a `401` means the key is missing, wrong, or pointed at the wrong environment. Retrying will not fix it.
+The old `/auth/login` + `/auth/csrf-token` handshake was deleted in 2.0.0, along with `playerPassword`. Those headers were never read by the game API, and `/auth/login` authenticates developer-console accounts, not players. The player token above is a different thing: it is minted by your server from **your** session and is read by the `/api/sdk/*` routes.
 
 ---
 
@@ -520,8 +533,6 @@ Task<AvailableDestinationsResponse> GetTransferDestinationsAsync(...)
 Task<InitiateTransferResponse>      InitiateTransferAsync(
         string clientRequestId, string sourceName, string sourceEmail, string sourcePhone,
         string targetPhone, string targetEmail, string targetGameId, string amount, ...)
-Task<VerifySmsResponse>             VerifyTransferSmsAsync(string transactionId, string smsPin, ...)
-Task<ResendPinResponse>             ResendTransferPinAsync(string transactionId, ...)
 Task<TransactionStatusResponse>     GetTransferStatusAsync(string transactionId, ...)
 Task<ClaimTransferResponse>         ClaimTransferAsync(
         string claimCode, string targetPlayerName, string targetPlayerEmail,
@@ -535,8 +546,6 @@ Task<AvailableDestinationsResponse> GetSendDestinationsAsync(...)
 Task<InitiateSendResponse>          InitiateSendAsync(
         string clientRequestId, string senderName, string senderEmail, string senderPhone,
         string receiverPhone, string receiverEmail, string receivingGameId, string amount, ...)
-Task<VerifySmsResponse>             VerifySendSmsAsync(string transactionId, string smsPin, ...)
-Task<ResendPinResponse>             ResendSendPinAsync(string transactionId, ...)
 Task<TransactionStatusResponse>     GetSendStatusAsync(string transactionId, ...)
 Task<ClaimCurrencyResponse>         ClaimCurrencyAsync(
         string claimCode, string receiverName, string receiverEmail, string receiverPhone,
@@ -545,9 +554,9 @@ Task<ClaimCurrencyResponse>         ClaimCurrencyAsync(
 
 > ### Sends and transfers are not interchangeable
 >
-> They are two distinct backend flows with two distinct sets of routes. The backend filters on transaction type inside its lookup, so submitting a **transfer's** id to the **sends** verifier returns a bare `404` with no useful message.
+> They are two distinct backend flows with two distinct sets of routes. Pass the matching flow (`InvoApprovalFlow.Send` or `InvoApprovalFlow.Transfer`) to the phone approval, which then settles on the right endpoint.
 >
-> The old ambiguous `VerifySmsAsync` and `GetAvailableDestinationsAsync` caused exactly that bug and have been split into explicitly named pairs: `VerifySendSmsAsync` / `VerifyTransferSmsAsync`, and `GetSendDestinationsAsync` / `GetTransferDestinationsAsync`.
+> The SMS methods (`VerifySendSmsAsync`, `VerifyTransferSmsAsync`, `ResendSendPinAsync`, `ResendTransferPinAsync`) are `[Obsolete]`. Invo has retired that path.
 
 #### Initiating
 
@@ -568,12 +577,12 @@ var response = await api.InitiateSendAsync(
     receivingGameId: targetGameId,
     amount:          InvoFormat.Amount(amount));
 
-// A 2xx does not mean "proceed to the PIN screen" — check the status first.
+// A 2xx does not mean "approved" — check the status first.
 switch (response.status)
 {
     case InvoStatus.Success:
-        if (response.verification_method == "sms") ShowPinScreen(response.transaction_id);
-        else                                       ShowInAppApprovalScreen(response.transaction_id);
+        // Funds are reserved. Nothing moves until the sender approves on their phone.
+        await ApproveOnPhone(response.transaction_id);
         break;
 
     case InvoStatus.PendingGuardianApproval:      // HTTP 202
@@ -588,16 +597,28 @@ switch (response.status)
 
 `response.transaction_id` is what every subsequent call in the flow keys off. `send_details.fees_preview` (or `transfer_details.fees_preview`) carries the authoritative fees — display those, not a local estimate.
 
-#### Verifying
+#### Approving on the phone
 
 ```csharp
-var verified = await api.VerifySendSmsAsync(transactionId, "123456");
-Debug.Log($"Claim code: {verified.claim_code}");        // never log this in a shipping build
+var result = await InvoDeviceApproval.RunAsync(transactionId, InvoApprovalFlow.Send, myApprovalView);
+if (result.Succeeded) ShowSent();
 ```
 
-The PIN allows **3 attempts**. `ResendSendPinAsync` / `ResendTransferPinAsync` answer `2xx` with `status == "resent"` on success, but the same route also answers `2xx` with a cooldown — read `retry_after` before re-enabling the button.
+`RunAsync` shows the QR (or opens the INVO page on a phone), polls, shows the first-time match-code prompt, and then makes the **settle** call that actually moves the money. An approved poll alone moves nothing. Outcomes, holds, retries and the ambiguous-failure rule are in [InvoSDK-README → Phone approval (QR)](InvoSDK-README.md#phone-approval-qr).
 
-#### Claiming
+#### Collecting (receiver)
+
+The receiver collects in the **receiving** game with the same phone approval:
+
+```csharp
+var pending = await api.GetPendingActionsAsync();
+var item = pending.pending.Find(p => p.kind == PendingAction.KindReceivingConfirm);
+var result = await InvoDeviceApproval.RunAsync(item.transfer_id, item.ApprovalFlow);   // SendReceipt / TransferReceipt
+```
+
+#### Claim code (fallback)
+
+Use this for a receiver who has no account in the receiving game yet (`409 receiver_not_enrolled_use_claim_code`):
 
 ```csharp
 var claimed = await api.ClaimCurrencyAsync(
@@ -619,15 +640,13 @@ Debug.Log($"New balance: {claimed.new_balance}");
 
 `ClaimTransferAsync` requires all five of `claimCode`, `targetPlayerName`, `targetPlayerEmail`, `targetPlayerPhone`, `targetCurrencyId`.
 
-> **Claims authenticate with the *receiving* game's key.** This plugin holds one key. Same-game (peer-to-peer) claims work; a cross-game claim `404`s with "not intended for this game", because the transaction belongs to a different `to_game_id`. The claim must run in the receiving game, on the receiving player's device, with that game's key. See [InvoSDK-README §4](InvoSDK-README.md#4-cross-game-claims).
+> **Claim codes authenticate with the *receiving* game's key.** Same-game (peer-to-peer) claims work; a cross-game claim `404`s with "not intended for this game". The phone-approval collect has no such limit, because the receiving game's own build runs it. See [InvoSDK-README §4](InvoSDK-README.md#4-cross-game-claims).
 
 **Peer-to-peer sends.** The destinations endpoint omits your own game, but `initiate-send` permits same-game sends. Pass `receivingGameId: api.GameId` directly.
 
 ### `verification_method`
 
-`InitiateSendResponse` and `InitiateTransferResponse` both carry `verification_method`, always present, either `"sms"` or `"in_app"`.
-
-When it is `"in_app"` the proactive **SMS PIN is suppressed**. Showing a PIN screen leaves the player waiting for a text that was never sent. The bundled panels branch on this and fall back to polling the status endpoint until `verification_state` reads `"approved"`.
+`InitiateSendResponse` and `InitiateTransferResponse` both carry `verification_method`, either `"in_app"` or `"sms"`. **Approve on the phone either way.** `"sms"` only means Invo also texted a legacy PIN, which happens for a brand-new tenant before its first approval. Do not build a PIN screen. QR is the approval's *channel*, not a verification method.
 
 ### Utility Methods
 
@@ -695,9 +714,9 @@ The API deliberately returns **HTTP 200 and 202 for outcomes that are not comple
 |---|---|---|
 | `success` | 200 / 201 | Completed. |
 | `needs_account_selection` | **200** | Several accounts share the receiver's phone. **Nothing was credited** — the session is rolled back. Show a picker from `candidates` and call again with the chosen player id. |
-| `pending_guardian_approval` | **202** | The player is a minor. Held up to 15 minutes for a guardian's SMS reply. Do **not** advance to the PIN screen. |
+| `pending_guardian_approval` | **202** | The player is a minor. Held for a guardian's approval. The sender approves on their phone once it clears. |
 | `pending_confirmation` | **202** | Recipient identity step-up in progress. |
-| `resent` | 200 | A PIN resend succeeded. The same route also returns 2xx for a cooldown — read `retry_after`. |
+| `resent` | 200 | Legacy: a PIN resend succeeded. Only the `[Obsolete]` resend methods return it. |
 
 Use the `InvoStatus` constants rather than string literals:
 
@@ -789,23 +808,31 @@ All paths are relative to the environment base — `https://invo.network/api` or
 | `PurchaseItemAsync` | POST | `/item-purchases/purchase-item` |
 | `GetSendDestinationsAsync` | POST | `/currency-sends/available-destinations` |
 | `InitiateSendAsync` | POST | `/currency-sends/initiate-send` |
-| `VerifySendSmsAsync` | POST | `/currency-sends/verify-sms` |
-| `ResendSendPinAsync` | POST | `/currency-sends/resend-pin` |
 | `GetSendStatusAsync` | GET | `/currency-sends/{transaction_id}/status` |
 | `ClaimCurrencyAsync` | POST | `/currency-sends/claim-currency` |
 | `GetTransferDestinationsAsync` | POST | `/transfers/available-destinations` |
 | `InitiateTransferAsync` | POST | `/transfers/initiate-transfer` |
-| `VerifyTransferSmsAsync` | POST | `/transfers/verify-sms` |
-| `ResendTransferPinAsync` | POST | `/transfers/resend-pin` |
 | `GetTransferStatusAsync` | GET | `/transfers/{transaction_id}/status` |
 | `ClaimTransferAsync` | POST | `/transfers/claim-transfer` |
+
+Player-token routes, sent straight to Invo with `Authorization: Bearer`:
+
+| Method | HTTP | Endpoint |
+|--------|------|----------|
+| `GetPlayerTokenAsync` (mint) | POST | `/sdk/player-token` (game secret, through your server) |
+| `BeginDeviceApprovalAsync` | POST | `/sdk/approvals/device/begin` |
+| `PollDeviceApprovalAsync` | POST | `/sdk/approvals/device/poll` |
+| `ConfirmDeviceEnrollmentAsync` | POST | `/sdk/approvals/device/confirm-enrollment` |
+| `SettleDeviceApprovalAsync` | POST | `/sdk/transfers/{id}/approve`, `/sdk/send/{id}/approve`, `/sdk/send/{id}/confirm-receipt`, `/sdk/transfers/{id}/confirm-receipt` |
+| `GetPendingActionsAsync` | GET | `/sdk/transfers/pending` |
+
+Retired, kept `[Obsolete]`: `VerifySendSmsAsync` / `VerifyTransferSmsAsync` (`/…/verify-sms`), `ResendSendPinAsync` / `ResendTransferPinAsync` (`/…/resend-pin`).
 
 Not called by the plugin, but part of a complete integration — see [InvoSDK-README](InvoSDK-README.md#what-you-must-wire-yourself):
 
 | Purpose | HTTP | Endpoint |
 |---|---|---|
 | Mint a hosted-checkout session (server-side) | POST | `/api/checkout/sessions` |
-| Mint a 15-minute player token (server-side) | POST | `/api/sdk/player-token` |
 | Approve a phone share after a 409 | POST | `/api/wallet/phone-share/approve` |
 | Poll guardian approval | GET | `/api/transactions/{id}/approval-status` |
 
@@ -833,11 +860,18 @@ Assets/InvoSDK/Scripts/UI/
 │   ├── FeatureDailyItemCard.cs
 │   └── FeatureWeeklyItemCard.cs
 ├── Components/
+│   ├── InvoApprovalStep.cs          # Shared phone-approval step (holds, status read-back)
 │   ├── InvoStepController.cs
 │   ├── InvoUIButtonBinder.cs
-│   └── VerificationCodeInput.cs
+│   └── VerificationCodeInput.cs     # Legacy; no longer used by the panels
 ├── TransferCurrencyPanel.cs         # 4-step transfer wizard
 └── TransferStep.cs
+
+Assets/InvoSDK/Scripts/Runtime/DeviceApproval/
+├── InvoDeviceApproval.cs            # RunAsync: begin → QR / browser → poll → settle
+├── InvoDeviceApprovalView.cs        # IInvoDeviceApprovalView, InvoDeviceApprovalPanelView (uGUI), overlay
+├── InvoQrCode.cs / InvoQrTexture.cs # Dependency-free QR encoder → Texture2D
+└── InvoDeviceApprovalCore.cs        # Pure rules (settled-status allow-list, poll pacing)
 ```
 
 ### Transfer Flow
@@ -850,31 +884,33 @@ Assets/InvoSDK/Scripts/UI/
 │  ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐       │
 │  │ Step 1  │───▶│ Step 2  │───▶│ Step 3  │───▶│ Step 4  │       │
 │  │         │    │         │    │         │    │         │       │
-│  │ Enter   │    │ Review  │    │ Verify  │    │ Success │       │
-│  │ Details │    │ Summary │    │         │    │ Confirm │       │
-│  │         │    │         │    │ • SMS   │    │         │       │
-│  │ • From  │    │ • Fees  │    │   PIN,  │    │ • Claim │       │
-│  │ • To    │    │ • Net   │    │   or    │    │   code  │       │
-│  │ • Amount│    │ • Total │    │ • in-app│    │ • Expiry│       │
-│  │         │    │         │    │ • or    │    │         │       │
+│  │ Enter   │    │ Review  │    │ Approve │    │ Success │       │
+│  │ Details │    │ Summary │    │ on phone│    │ Confirm │       │
+│  │         │    │         │    │         │    │         │       │
+│  │ • From  │    │ • Fees  │    │ • QR    │    │ • Collect│      │
+│  │ • To    │    │ • Net   │    │   (desk)│    │   in the │      │
+│  │ • Amount│    │ • Total │    │ • page  │    │   other  │      │
+│  │         │    │         │    │  (phone)│    │   game   │      │
 │  │         │    │         │    │ guardian│    │         │       │
 │  └─────────┘    └─────────┘    └─────────┘    └─────────┘       │
 │                                                                 │
 │  [TransferCurrencyPanel.cs — one 4-step wizard]                 │
 │                                                                 │
-│  Step 3 is NOT always a PIN screen. It branches on              │
-│  verification_method and on a 202 guardian-approval status.     │
+│  Step 3 has no SMS code. A 202 guardian hold comes first;       │
+│  the player approves once it clears.                            │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Scene wiring
 
-Several fields in the bundled `MainScene` are unassigned, including the transfer panel's phone inputs and status label. The panels now log a **clear error naming the specific missing field** rather than throwing a swallowed `NullReferenceException` — but you still have to assign them in the Inspector.
+> **⚠️ 3.0.0 needs new wiring.** Add an `InvoDeviceApprovalPanelView` (square `RawImage` + texts + Cancel) to step 3, and assign `approvalView`, `retryApprovalButton` and, on the send panel's claim side, `collectPendingButton` / `collectPendingText`. Then delete the old SMS widgets. The full checklist is in [InvoSDK-README → Updating your UI for 3.0.0](InvoSDK-README.md#updating-your-ui-for-300).
 
-Optional fields worth wiring on `TransferCurrencyPanel`: `senderPhoneErrorText`, `receiverPhoneErrorText`, `amountErrorText`, `destinationsStatusText`, `feeEstimateNoticeText`, `resendPinButton`, `resendPinLabelText`, `inAppApprovalGroup`, `guardianApprovalGroup`, `claimCodeText`, `claimCodeExpiryText`.
+Several older fields in the bundled `MainScene` are also unassigned, including the transfer panel's phone inputs and status label. The panels log a **clear error naming the specific missing field** rather than throwing a swallowed `NullReferenceException`.
 
-> **`claimCodeText` is effectively required.** Without it the recipient never sees the claim code and the transfer cannot be completed. The claim code is deliberately **never logged** — Unity writes `Player.log` to disk in release builds and Android logs to logcat, and claim codes are bearer credentials.
+Optional fields worth wiring on `TransferCurrencyPanel`: `senderPhoneErrorText`, `receiverPhoneErrorText`, `amountErrorText`, `destinationsStatusText`, `feeEstimateNoticeText`, `guardianApprovalGroup`, `claimCodeText`, `claimCodeExpiryText`.
+
+> Claim codes are a fallback now; receivers collect with their own phone approval. They are still **never logged** — Unity writes `Player.log` to disk in release builds and Android logs to logcat, and claim codes are bearer credentials.
 
 ### Fees
 
@@ -974,7 +1010,7 @@ This is a build-order list, not a tick-box list. Items 1–3 are work you have t
 - [ ] **8. Treat a 409 on purchase as success.** Verify this in your own UI before launch.
 - [ ] **9. Pass `client_request_id` through your proxy unchanged** so idempotency survives the extra hop.
 - [ ] **10. Test the whole flow in sandbox first**, including the failure paths, on a comma-decimal locale device.
-- [ ] **11. Confirm nothing logs** claim codes, SMS PINs, tokens, or raw response bodies.
+- [ ] **11. Confirm nothing logs** claim codes, device codes, player tokens, or raw response bodies.
 - [ ] **12. Only then set `useProduction = true`.**
 
 ---
@@ -995,31 +1031,23 @@ Unity client ──(your session auth)──▶ Your server ──(X-Game-Secret
                                            ◀──(webhook, HMAC-signed)───────┘
 ```
 
-### Minimum viable proxy
+### The contract
 
-In whatever stack you already use:
+**Required for production.** Set `InvoSDKConfig.gameServerUrl`. The plugin then sends every game-secret call to `<gameServerUrl>/api/<Invo path>` with Invo's own method and body. Your server authenticates the player, checks the path against an allow-list, adds `X-Game-Secret-Key`, forwards the call to Invo and returns the response **unchanged**. Attach your session with `APIManager.GameServerRequestDecorator`.
 
-```
-POST /invo/checkout-session   → mints a hosted checkout session
-POST /invo/player-token       → mints a 15-minute player token
-POST /invo/purchase-item      → validates your session, then proxies
-POST /invo/initiate-transfer  → validates your session, then proxies
-POST /invo/initiate-send      → validates your session, then proxies
-POST /invo/claim              → proxies with the RECEIVING game's key
-POST /invo/webhook            → receives Invo webhooks, verifies the signature
-```
+The allow-list, and the per-path checks your server must make, are in [InvoSDK-README → Server-side proxy](InvoSDK-README.md#server-side-proxy). The two that matter most:
+
+- `POST /api/sdk/player-token`: **ignore `player_email` in the body** and use your session's player. Otherwise anyone can mint a token for anyone.
+- `POST /api/item-purchases/purchase-item`: **set the price from your own catalog.** Invo charges whatever it is sent.
+
+The phone approval does **not** pass through your server. It runs on the player token, straight to Invo.
 
 ### Rules that matter
 
-1. **The `ivsdk_` key exists only here.** Never in a build, never in a URL, never in a log, never in a repo.
-2. **Authenticate the player yourself** before proxying. Invo authenticates your *game*, not your player. The API has no idea which of your players is calling.
-3. **Set the price server-side.** Look the item up in your own catalog; do not trust a client-supplied `unit_price`.
-4. **Pass the client's `client_request_id` through unchanged**, so idempotency survives the extra hop.
-5. **Treat the webhook as the source of truth** for real-money credit.
-
-### Player tokens
-
-`POST /api/sdk/player-token` with your secret and `{"player_email": "..."}` returns a **15-minute** token scoped to one player, plus an opaque `identity_id`. There is **no refresh call** — on a `401`, mint a fresh one. That token is what the `/api/sdk/*` routes read. The plugin does not use those routes today; see [InvoSDK-README §3](InvoSDK-README.md#3-in-app-verification-and-passkeys-optional-not-implemented).
+1. **The `ivsdk_` key exists only on your server.** Never in a build, never in a URL, never in a log, never in a repo.
+2. **Authenticate the player yourself** before forwarding. Invo authenticates your *game*, not your player.
+3. **Pass the client's `client_request_id` through unchanged**, so idempotency survives the extra hop.
+4. **Treat webhooks as the source of truth** for anything you credit (`device_approval.approved`, `transfer.claim_pending`, `purchase.completed`).
 
 ---
 
@@ -1125,7 +1153,9 @@ For an in-app completion signal you need native bridges — an iOS `WKScriptMess
 
 ## Hosted approval on mobile (system browser)
 
-Transfers, sends and claims can be approved with a passkey on **Invo's hosted approval page** instead of an SMS PIN. On iOS and Android the plugin opens that page in the **system browser** and learns when it is done. Nothing in the plugin can move money: settlement happens on your server, with a value the client never sees.
+Transfers, sends and collects are approved with a passkey on **Invo's hosted approval page**. On iOS and Android the plugin opens that page in the **system browser** and learns when it is done.
+
+> **Since 3.0.0 you usually do not need this section.** `InvoDeviceApproval.RunAsync` runs the whole mobile flow on the client with the player token: begin with `channel: "app_browser"`, open the page, poll, and settle. See [InvoSDK-README → Phone approval (QR)](InvoSDK-README.md#phone-approval-qr). The **server-held** variant described below is still supported for games that want `device_code` and the settle call to stay on their server.
 
 ### Two halves
 
@@ -1269,11 +1299,13 @@ Custom Tabs are optional. Add `implementation 'androidx.browser:browser:1.8.0'` 
 | `APIManager.Instance is null` | The `APIManager` component is not in the scene. |
 | `400 "Invalid price format"` | A device locale emitted a comma decimal. Use `InvoFormat.Amount(...)`, and `decimal` not `float`. |
 | `400 "Phone number must start with country code"` | Missing `+`. Use `InvoPhone.Normalize(...)` and surface `DescribeProblem(...)`. |
-| Transfer verify returns `404` | A transfer id was sent to the sends verifier. Use `VerifyTransferSmsAsync`. |
+| `SDK_GAME_SERVER_REQUIRED` | Production build with no `gameServerUrl`. See [Server-Side Proxy](#server-side-proxy). |
+| `403 TENANT_NOT_MIGRATED` | Invo has not enabled SDK verification for your game yet. Ask for the sandbox switch first. |
 | Claim returns `403` | The claim phone does not match the initiate phone digit-for-digit. |
 | Claim returns `404` cross-game | Cross-game claims need the **receiving** game's key. See [InvoSDK-README §4](InvoSDK-README.md#4-cross-game-claims). |
 | Purchase shows "failed" but the balance dropped | A `409` was rendered as an error. `ex.IsDuplicate` means it **succeeded**. |
-| Player waits forever for an SMS that never arrives | `verification_method` was `"in_app"`. The PIN is suppressed — branch on it. |
+| QR shows but scanning does nothing | The QR was cropped, tinted or stretched. Keep the `RawImage` square with the texture's white border intact. |
+| Approved on the phone, but the game never finishes | The settle call failed or was never made. An approved poll moves nothing; read the transaction status, and see [Phone approval (QR)](InvoSDK-README.md#phone-approval-qr). |
 | Flow stalls after initiate with no error | A `202` (`pending_guardian_approval` / `pending_confirmation`) was treated as success. Branch on `status`. |
 | Claim "works" but credits nothing | HTTP 200 `needs_account_selection`. Show `candidates`, re-call with the chosen player id. |
 | `401` on every call | Missing or wrong `sdkKey`, or a sandbox key against production. Not a session problem — there are no sessions. |
@@ -1287,7 +1319,7 @@ Custom Tabs are optional. Add `implementation 'androidx.browser:browser:1.8.0'` 
 
 All SDK logs are prefixed with `[InvoSDK]`.
 
-> **Unity writes `Player.log` to disk in release builds**, and Android logs to logcat. Never log claim codes, SMS PINs, player tokens, or raw response bodies. `InvoApiException.ToString()` is log-safe by design — it prints status, error code, error id and message, and deliberately omits `Body`. URLs containing a player email are redacted at `/by-email/`.
+> **Unity writes `Player.log` to disk in release builds**, and Android logs to logcat. Never log claim codes, device codes, player tokens, or raw response bodies. `InvoApiException.ToString()` is log-safe by design — it prints status, error code, error id and message, and deliberately omits `Body`. URLs containing a player email are redacted at `/by-email/`.
 
 ### Network Issues
 
@@ -1403,21 +1435,21 @@ using InvoSDK;
 
 public class SendController : MonoBehaviour
 {
+    [SerializeField] private InvoDeviceApprovalPanelView approvalView;   // see "Updating your UI for 3.0.0"
+
     private string _transactionId;
     private string _clientRequestId;
-    private string _verificationMethod;
 
     public async void StartSend(string rawReceiverPhone, string targetGameId, string rawAmount)
     {
         var api = APIManager.Instance;
 
-        // Normalize before anything else. Never truncate, never guess a country code.
-        string senderPhone   = InvoPhone.Normalize(SenderPhoneFromSession());
+        // Phones still address the send. Normalize; never truncate, never guess a country code.
+        string senderPhone   = InvoPhone.Normalize(api.GetPlayerPhone());
         string receiverPhone = InvoPhone.Normalize(rawReceiverPhone);
-
-        if (receiverPhone == null)
+        if (senderPhone == null || receiverPhone == null)
         {
-            ShowError(InvoPhone.DescribeProblem(rawReceiverPhone));
+            ShowError(InvoPhone.DescribeProblem(receiverPhone == null ? rawReceiverPhone : api.GetPlayerPhone()));
             return;
         }
 
@@ -1427,102 +1459,93 @@ public class SendController : MonoBehaviour
             return;
         }
 
-        _clientRequestId ??= APIManager.NewClientRequestId();
+        // One intent, one id, one transaction - even across retries.
+        if (_transactionId == null)
+        {
+            _clientRequestId ??= APIManager.NewClientRequestId();
+            try
+            {
+                var response = await api.InitiateSendAsync(
+                    clientRequestId: _clientRequestId,
+                    senderName:      api.GetPlayerName(),
+                    senderEmail:     api.GetPlayerEmail(),
+                    senderPhone:     senderPhone,
+                    receiverPhone:   receiverPhone,
+                    receiverEmail:   null,
+                    receivingGameId: targetGameId,
+                    amount:          InvoFormat.Amount(amount));
 
+                _transactionId = response.transaction_id;
+                if (response.status == InvoStatus.PendingGuardianApproval)
+                {
+                    ShowInfo("Waiting for a guardian. You will approve on your phone once they have.");
+                    return;   // poll GetSendStatusAsync / GetPendingActionsAsync, then come back here
+                }
+                if (response.status != InvoStatus.Success)
+                {
+                    ShowError("This send needs another step. Try again shortly.");
+                    return;
+                }
+            }
+            catch (InvoApiException ex) when (ex.ErrorCode == "PHONE_SHARE_APPROVAL_REQUIRED")
+            {
+                ShowError("That number is registered to another account and needs approval.");   // never show ex.Body
+                return;
+            }
+            catch (InvoApiException ex)
+            {
+                Debug.LogError(ex);
+                ShowError("The send could not be started.");
+                return;
+            }
+        }
+
+        // The phone approval. Calling StartSend again after a decline re-shows the QR for the
+        // SAME transaction - it never initiates a second one.
         try
         {
-            var response = await api.InitiateSendAsync(
-                clientRequestId: _clientRequestId,
-                senderName:      api.GetPlayerName(),
-                senderEmail:     api.GetPlayerEmail(),
-                senderPhone:     senderPhone,
-                receiverPhone:   receiverPhone,
-                receiverEmail:   null,                       // optional
-                receivingGameId: targetGameId,
-                amount:          InvoFormat.Amount(amount));
-
-            _transactionId      = response.transaction_id;
-            _verificationMethod = response.verification_method;
-
-            switch (response.status)
+            var result = await InvoDeviceApproval.RunAsync(_transactionId, InvoApprovalFlow.Send, approvalView);
+            switch (result.Outcome)
             {
-                case InvoStatus.PendingGuardianApproval:      // HTTP 202 — do NOT show a PIN screen
-                    ShowGuardianWaiting(response.guardian_approval);
+                case InvoDeviceApprovalOutcome.Settled:
+                case InvoDeviceApprovalOutcome.AlreadySettled:
+                    ShowInfo("Sent. They collect it in the other game.");
+                    _transactionId = null;
+                    _clientRequestId = null;
                     break;
-
-                case InvoStatus.PendingConfirmation:          // HTTP 202
-                    ShowRecipientConfirmationWaiting();
+                case InvoDeviceApprovalOutcome.Held:
+                    ShowInfo("Approved - one more check is running.");
                     break;
-
-                case InvoStatus.Success:
-                    // "in_app" SUPPRESSES the SMS PIN — a PIN screen would wait forever.
-                    if (_verificationMethod == "in_app") ShowInAppApprovalAndPoll();
-                    else                                 ShowPinEntry(response.verification_required);
-                    break;
-
-                default:
-                    Debug.LogWarning($"[Send] Unexpected status '{response.status}'");
+                case InvoDeviceApprovalOutcome.Denied:
+                case InvoDeviceApprovalOutcome.Expired:
+                    ShowInfo("Not approved. Tap Send to show a new code.");
                     break;
             }
         }
-        catch (InvoApiException ex) when (ex.ErrorCode == "PHONE_SHARE_APPROVAL_REQUIRED")
-        {
-            // 409: that phone belongs to another account and an OTP has been texted to its owner.
-            // NEVER show ex.Body — it contains the other user's phone and masked email.
-            ShowError("That number is registered to another account and needs approval.");
-        }
-        catch (InvoApiException ex) when (ex.StatusCode == 403 && ex.ErrorCode == "GUARDIAN_REQUIRED")
-        {
-            ShowError("This account needs a guardian on file before it can send currency.");  // terminal
-        }
         catch (InvoApiException ex)
         {
+            // AMBIGUOUS: the money may have moved. Read before you say "failed".
+            var status = await api.GetSendStatusAsync(_transactionId);
+            if (status.verification_state == "approved" || status.verification_state == "completed")
+                ShowInfo("Sent.");
+            else
+                ShowError("We could not confirm the approval. Check your history.");
             Debug.LogError(ex);
-            ShowError("The send could not be started.");
         }
     }
 
-    public async void VerifySend(string smsPin)
-    {
-        try
-        {
-            // Sends verify against the SENDS route. A transfer id here always 404s.
-            var verified = await APIManager.Instance.VerifySendSmsAsync(_transactionId, smsPin);
-
-            // Show it — never log it. Player.log persists in release builds.
-            ShowClaimCode(verified.claim_code, verified.claim_instructions?.claim_code_expires_at);
-            _clientRequestId = null;
-        }
-        catch (InvoApiException ex)
-        {
-            Debug.LogError(ex);
-            ShowError("That code was not accepted.");   // 3 attempts allowed
-        }
-    }
-
-    public async void ResendPin()
-    {
-        var result = await APIManager.Instance.ResendSendPinAsync(_transactionId);
-
-        if (result.status == InvoStatus.Resent) ShowInfo("A new code is on its way.");
-        else if (result.retry_after.HasValue)   ShowCooldown(result.retry_after.Value);
-    }
-
-    private string SenderPhoneFromSession() => "+15551234567";
     private void ShowError(string message) { }
     private void ShowInfo(string message) { }
-    private void ShowCooldown(int seconds) { }
-    private void ShowClaimCode(string code, string expiresAt) { }
-    private void ShowPinEntry(object verificationRequired) { }
-    private void ShowInAppApprovalAndPoll() { }
-    private void ShowGuardianWaiting(object guardianApproval) { }
-    private void ShowRecipientConfirmationWaiting() { }
 }
 ```
 
 ---
 
 ## Changelog
+
+### 3.0.0 — QR phone approval replaces SMS
+
+See [CHANGELOG.md](CHANGELOG.md) for the full list. In short: SMS verification is removed in favour of the QR / system-browser phone approval; production calls that need the game secret go through `gameServerUrl`; the panels gained new fields that **you must wire** ([Updating your UI for 3.0.0](InvoSDK-README.md#updating-your-ui-for-300)).
 
 ### Unreleased — correctness and security pass
 

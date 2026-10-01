@@ -93,6 +93,19 @@ namespace InvoSDK.Editor
             config.useProduction = EditorGUILayout.Toggle("Use Production", config.useProduction);
 
             GUILayout.Space(10);
+            GUILayout.Label("Game Server", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Required for production. Calls that need the game secret (initiate send/transfer, " +
+                "item purchase, catalog, balance, claims, player tokens) go to <this URL>/api/<Invo path>. " +
+                "Your server checks the player's session, adds X-Game-Secret-Key and forwards to Invo. " +
+                "Blank: the SDK calls Invo directly with the SDK Key, which it only allows in sandbox.",
+                MessageType.Info);
+            config.gameServerUrl = EditorGUILayout.TextField(
+                new GUIContent("Game Server URL",
+                    "Base URL of your server, e.g. https://api.mygame.com. See README, 'Server-side proxy'."),
+                config.gameServerUrl);
+
+            GUILayout.Space(10);
             GUILayout.Label("Hosted Checkout", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "Real-money purchases cannot be made from the client. Point this at YOUR server " +
@@ -112,6 +125,7 @@ namespace InvoSDK.Editor
             }
 
             DrawProductionKeyWarning();
+            DrawMissingGameServerWarning();
 
             GUILayout.Space(20);
 
@@ -164,6 +178,20 @@ namespace InvoSDK.Editor
                 Selection.activeObject = stray;
                 EditorGUIUtility.PingObject(stray);
             }
+        }
+
+        /// <summary>Production with no game server: every game-secret call is refused at runtime.</summary>
+        private void DrawMissingGameServerWarning()
+        {
+            if (!config.useProduction || !string.IsNullOrWhiteSpace(config.gameServerUrl))
+                return;
+
+            GUILayout.Space(10);
+            EditorGUILayout.HelpBox(
+                "PRODUCTION HAS NO GAME SERVER\n\n" +
+                "The SDK refuses to send the game secret from a production build, so sends, transfers, " +
+                "purchases and phone approvals will fail until Game Server URL is set.",
+                MessageType.Warning);
         }
 
         /// <summary>Production key + client build is the exact failure this SDK must not enable.</summary>

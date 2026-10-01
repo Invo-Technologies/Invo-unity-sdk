@@ -45,5 +45,8 @@ namespace InvoSDK
 
         /// <summary>ISO-8601 timestamp of the enrolment request.</summary>
         public string requested_at;
+
+        /// <summary>True when the phone is REPLACING a lost INVO passkey rather than setting one up.</summary>
+        public bool recovery;
     }
 }
