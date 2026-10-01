@@ -16,11 +16,13 @@ namespace InvoSDK.UI
     ///
     ///   Step 1  Recipient + amount
     ///   Step 2  Review (authoritative fees arrive only after initiate-send)
-    ///   Step 3  Sender verification (SMS PIN, or in-app approval, or a guardian hold)
-    ///   Step 4  Sent - the sender shares the claim code with the receiver
+    ///   Step 3  Sender approval on the phone: a QR to scan (desktop, Steam, console) or the
+    ///           INVO page in the system browser (iOS, Android). No SMS code. A guardian hold
+    ///           can come first.
+    ///   Step 4  Sent - the receiver collects it in the receiving game
     ///
-    /// The sender NEVER claims. Claiming happens in the RECEIVING game, on the
-    /// receiver's device, authenticated with the RECEIVING game's secret key.
+    /// The sender NEVER claims. Collecting happens in the RECEIVING game, on the
+    /// receiver's device, with the receiver's own phone approval (claim code as fallback).
     /// The claim UI in this file is a separate, self-contained panel for a player
     /// who is RECEIVING currency - see the "Claim Currency Panel" region.
     /// </summary>
@@ -78,15 +80,22 @@ namespace InvoSDK.UI
         public Button confirmButtonStep2;
         public Button backButtonStep2;
 
-        [Header("Step 3 - SMS Verification")]
-        [SerializeField] private VerificationCodeInput verificationCodeInput;
+        [Header("Step 3 - Phone Approval (replaces the SMS code)")]
+        [Tooltip("The QR / approval view inside step3Panel. Leave empty to use the built-in overlay.")]
+        public InvoDeviceApprovalPanelView approvalView;
+        [Tooltip("Shown after a decline, an expired code or a cancel: shows a fresh QR for the same send.")]
+        public Button retryApprovalButton;
+        [Tooltip("Instruction line above the QR.")]
         public TMP_Text verificationTargetText;
+        public Button backButtonStep3;
+
+        [Header("Step 3 - LEGACY SMS widgets (hidden at runtime; remove from your prefab)")]
+        [SerializeField] private VerificationCodeInput verificationCodeInput;
         public TMP_Text verificationExpiresText;
         public Button resendPinButton;
         public TMP_Text resendPinStatusText;
-        public Button backButtonStep3;
 
-        [Header("Step 3 - In-App Approval (verification_method == \"in_app\")")]
+        [Header("Step 3 - Hold while the recipient's details are confirmed")]
         public GameObject inAppApprovalPanel;
         public TMP_Text inAppApprovalStatusText;
         public Button inAppApprovalCancelButton;
@@ -114,6 +123,14 @@ namespace InvoSDK.UI
         public TMP_InputField claimPhoneInput;
         public Button claimSubmitButton;
         public TMP_Text claimStatusText;
+
+        [Header("Claim - Collect with phone approval (preferred over the claim code)")]
+        [Tooltip("Shown when a send to the active player is waiting in this game.")]
+        public Button collectPendingButton;
+        public TMP_Text collectPendingText;
+        [Tooltip("QR view for the receiver's collect, inside claimPanel. Leave empty to use the built-in overlay. " +
+                 "Do not reuse approvalView: it lives in step 3, which is hidden while the claim panel is open.")]
+        public InvoDeviceApprovalPanelView collectApprovalView;
 
         [Header("Claim - Account Picker (status == needs_account_selection)")]
         public GameObject accountSelectionPanel;
@@ -161,21 +178,14 @@ namespace InvoSDK.UI
 
         private bool listenersBound;
         private bool sendInFlight;
-        private bool verificationInFlight;
+        private bool approvalInFlight;
+        private bool waitingInFlight;
         private bool claimInFlight;
         private bool claimCompleted;
-        private bool resendInFlight;
-        private bool pollingActive;
-        private string lastSubmittedPin;
-        private float resendAvailableAt;
         private List<AccountCandidate> claimCandidates = new();
+        private PendingAction collectable;
 
         private CancellationTokenSource pollCts;
-
-        private const float PollIntervalSeconds = 3f;
-        private const float PollTimeoutSeconds = 300f;
-        private const float ResendCooldownSeconds = 30f;
-        private const int MinPinLength = 4;
 
         // ==================================================================
         // Lifecycle
@@ -192,16 +202,11 @@ namespace InvoSDK.UI
         private void OnEnable()
         {
             pollCts = new CancellationTokenSource();
-            if (verificationCodeInput != null)
-                verificationCodeInput.OnCodeCompleted += OnVerificationCodeEntered;
             _ = RunGuarded(InitializeAsync);
         }
 
         private void OnDisable()
         {
-            if (verificationCodeInput != null)
-                verificationCodeInput.OnCodeCompleted -= OnVerificationCodeEntered;
-            pollingActive = false;
             CancelPolling();
         }
 
@@ -238,7 +243,7 @@ namespace InvoSDK.UI
             if (confirmButtonStep2 != null) confirmButtonStep2.onClick.AddListener(OnConfirmSendClicked);
             if (backButtonStep2 != null) backButtonStep2.onClick.AddListener(OnBackToStep1);
             if (backButtonStep3 != null) backButtonStep3.onClick.AddListener(OnBackToStep2);
-            if (resendPinButton != null) resendPinButton.onClick.AddListener(OnResendPinClicked);
+            if (retryApprovalButton != null) retryApprovalButton.onClick.AddListener(OnRetryApprovalClicked);
 
             // Bug 2: "Done" completes the SENDER's flow. It does not claim.
             if (doneButton != null) doneButton.onClick.AddListener(OnDoneClicked);
@@ -250,6 +255,7 @@ namespace InvoSDK.UI
             if (openClaimPanelButton != null) openClaimPanelButton.onClick.AddListener(OnOpenClaimPanel);
             if (closeClaimPanelButton != null) closeClaimPanelButton.onClick.AddListener(OnCloseClaimPanel);
             if (claimSubmitButton != null) claimSubmitButton.onClick.AddListener(OnClaimSubmitClicked);
+            if (collectPendingButton != null) collectPendingButton.onClick.AddListener(OnCollectPendingClicked);
             if (accountSelectionConfirmButton != null)
                 accountSelectionConfirmButton.onClick.AddListener(OnAccountSelectionConfirmClicked);
             if (accountSelectionCancelButton != null)
@@ -269,7 +275,7 @@ namespace InvoSDK.UI
             RemoveClick(confirmButtonStep2, OnConfirmSendClicked);
             RemoveClick(backButtonStep2, OnBackToStep1);
             RemoveClick(backButtonStep3, OnBackToStep2);
-            RemoveClick(resendPinButton, OnResendPinClicked);
+            RemoveClick(retryApprovalButton, OnRetryApprovalClicked);
             RemoveClick(doneButton, OnDoneClicked);
             RemoveClick(copyClaimCodeButton, OnCopyClaimCodeClicked);
             RemoveClick(inAppApprovalCancelButton, OnAbandonWaiting);
@@ -277,6 +283,7 @@ namespace InvoSDK.UI
             RemoveClick(openClaimPanelButton, OnOpenClaimPanel);
             RemoveClick(closeClaimPanelButton, OnCloseClaimPanel);
             RemoveClick(claimSubmitButton, OnClaimSubmitClicked);
+            RemoveClick(collectPendingButton, OnCollectPendingClicked);
             RemoveClick(accountSelectionConfirmButton, OnAccountSelectionConfirmClicked);
             RemoveClick(accountSelectionCancelButton, OnAccountSelectionCancelClicked);
 
@@ -313,9 +320,10 @@ namespace InvoSDK.UI
             SetActiveSafe(step3Panel, step == 3);
             SetActiveSafe(step4Panel, step == 4);
 
-            // Waiting panels are alternatives to the PIN screen, never additions.
+            // Waiting panels are alternatives to the approval screen, never additions.
             SetActiveSafe(inAppApprovalPanel, false);
             SetActiveSafe(guardianApprovalPanel, false);
+            HideLegacySmsWidgets();
 
             SetStepAlpha(step);
         }
@@ -654,8 +662,14 @@ namespace InvoSDK.UI
             // Bug 8: never mint a second reservation for the same intent.
             if (!string.IsNullOrEmpty(currentTransactionId))
             {
-                ShowError("This send has already been started. Complete the verification step.");
-                ShowStep(3);
+                if (waitingInFlight)
+                {
+                    ShowInfo("This send is still on hold. You can approve it as soon as the hold clears.");
+                    return;
+                }
+                // Bug 8 still holds: never a second reservation. Confirm again re-shows the
+                // approval for the SAME transaction.
+                StartApproval();
                 return;
             }
 
@@ -704,8 +718,8 @@ namespace InvoSDK.UI
 
         /// <summary>
         /// Bug 5: a 2xx is not a success. The response status string decides what
-        /// happens next, and two of the possible outcomes are 202s that must not
-        /// advance to the PIN screen.
+        /// happens next, and two of the possible outcomes are holds where the sender
+        /// cannot approve yet.
         /// </summary>
         private void HandleInitiateResponse(InitiateSendResponse resp)
         {
@@ -728,8 +742,8 @@ namespace InvoSDK.UI
             {
                 ShowWaitingPanel(inAppApprovalPanel, 3);
                 SetText(inAppApprovalStatusText,
-                    "We are confirming the recipient's details. This send is on hold until that finishes.");
-                StartApprovalPolling();
+                    "We are confirming the recipient's details. You can approve the send as soon as that finishes.");
+                StartWaitThenApprove();
                 return;
             }
 
@@ -740,30 +754,9 @@ namespace InvoSDK.UI
                 return;
             }
 
-            // Bug 6: verification_method decides the verification surface.
-            if (string.Equals(resp.verification_method, "in_app", StringComparison.OrdinalIgnoreCase))
-            {
-                ShowWaitingPanel(inAppApprovalPanel, 3);
-                SetText(inAppApprovalStatusText,
-                    "Approve this send in your Invo app. No text message was sent - " +
-                    "your enrolled device holds the approval.");
-                // TODO: the in-app approve endpoints (sign + POST /api/sdk/send/{id}/approve)
-                // are not implemented in this plugin. Until they are, the panel can only
-                // wait for the player to approve in the Invo wallet app. Documented in the README.
-                StartApprovalPolling();
-                return;
-            }
-
-            ShowStep(3);
-            string masked = resp.verification_required != null ? resp.verification_required.phone_number_masked : null;
-            SetText(verificationTargetText, string.IsNullOrEmpty(masked)
-                ? "Enter the code we sent to your phone."
-                : $"Enter the code we sent to {masked}.");
-            SetText(verificationExpiresText, DescribeExpiry(resp.verification_expires_at, "Code expires"));
-            lastSubmittedPin = null;
-            verificationCodeInput?.Clear();
-            resendAvailableAt = Time.realtimeSinceStartup + ResendCooldownSeconds;
-            SetText(resendPinStatusText, string.Empty);
+            // verification_method is "in_app" or "sms". Both are approved on the phone now;
+            // "sms" only means Invo also texted a legacy PIN, which this panel no longer asks for.
+            StartApproval();
         }
 
         /// <summary>Bug 12: replace the local estimate with the server's fee breakdown.</summary>
@@ -792,158 +785,90 @@ namespace InvoSDK.UI
         }
 
         // ==================================================================
-        // Step 3 - SMS PIN verification
+        // Step 3 - phone approval (QR / system browser). Replaces the SMS PIN.
         // ==================================================================
 
-        // Bug 9: the handler stays sync so no unobserved Task can escape it, and
-        // bug 16: OnCodeCompleted re-fires whenever the last box changes while
-        // non-empty, so both a re-entrancy guard and a same-code guard are needed.
-        private void OnVerificationCodeEntered(string code) => _ = RunGuarded(() => HandleVerificationCodeAsync(code));
+        private void OnRetryApprovalClicked() => StartApproval();
 
-        private async Task HandleVerificationCodeAsync(string code)
+        private void StartApproval()
         {
-            if (verificationInFlight) return;
-            if (string.IsNullOrEmpty(code) || code.Length < MinPinLength) return;
-            if (code == lastSubmittedPin) return;
+            if (approvalInFlight || string.IsNullOrEmpty(currentTransactionId)) return;
+            string transactionId = currentTransactionId;
+            _ = RunGuarded(() => RunApprovalAsync(transactionId));
+        }
 
-            if (string.IsNullOrEmpty(currentTransactionId))
-            {
-                ShowError("This send is no longer active. Start again.");
-                return;
-            }
-
-            verificationInFlight = true;
-            lastSubmittedPin = code;
-            SetBusy(true);
+        private async Task RunApprovalAsync(string transactionId)
+        {
+            if (approvalInFlight) return;
+            approvalInFlight = true;
+            ShowStep(3);
+            SetRetryVisible(false);
             ClearStatus();
+            SetText(verificationTargetText, Application.isMobilePlatform
+                ? "Approve this send on the INVO page that opens. No code is texted to you."
+                : "Scan the QR code with your phone and approve with your passkey. No code is texted to you.");
             try
             {
-                var resp = await APIManager.Instance.VerifySendSmsAsync(currentTransactionId, code);
-                HandleVerifyResponse(resp);
-            }
-            catch (InvoApiException ex)
-            {
-                lastSubmittedPin = null; // let the player retype the same code
-                if (IsGuardianPending(ex))
-                {
-                    ShowGuardianWaiting(null);
-                }
-                else
-                {
-                    ShowError(DescribeError(ex));
-                }
-            }
-            catch (Exception ex)
-            {
-                lastSubmittedPin = null;
-                ShowError("We could not check that code. Please try again.");
-                Debug.LogError($"[InvoSDK] VerifySendSms failed: {ex.GetType().Name}");
+                var token = pollCts != null ? pollCts.Token : CancellationToken.None;
+                var result = await InvoApprovalStep.ApproveAsync(
+                    transactionId, InvoApprovalFlow.Send, approvalView,
+                    id => APIManager.Instance.GetSendStatusAsync(id), ShowInfo, token);
+                if (this == null || currentTransactionId != transactionId) return;
+                ApplyApprovalResult(result);
             }
             finally
             {
-                verificationCodeInput?.Clear();
-                SetBusy(false);
-                verificationInFlight = false;
+                approvalInFlight = false;
             }
         }
 
-        private static bool IsGuardianPending(InvoApiException ex) =>
-            ex.StatusCode == 202 ||
-            string.Equals(ex.ErrorCode, "GUARDIAN_APPROVAL_PENDING", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(ex.ErrorCode, "GUARDIAN_APPROVAL_CHECK_UNAVAILABLE", StringComparison.OrdinalIgnoreCase);
-
-        private void HandleVerifyResponse(VerifySmsResponse resp)
+        private void ApplyApprovalResult(InvoApprovalStepResult result)
         {
-            if (resp == null)
+            if (result.Approved)
             {
-                ShowError("The server did not confirm that code. Nothing has been sent yet.");
+                ShowSentScreen();
                 return;
             }
 
-            if (IsStatus(resp.status, InvoStatus.PendingGuardianApproval))
+            if (result.Cancelled)
             {
-                ShowGuardianWaiting(null);
+                if (!isActiveAndEnabled) return;
+                ShowStep(3);
+                SetRetryVisible(true);
+                ShowInfo("Approval stopped. Nothing was sent. You can show the code again.");
                 return;
             }
 
-            if (!IsStatus(resp.status, InvoStatus.Success))
+            ShowError(result.Message);
+            if (result.CanRetry)
             {
-                ShowError("That code was not accepted. Check it and try again.");
-                return;
+                ShowStep(3);
+                SetRetryVisible(true);
             }
-
-            currentClaimCode = resp.claim_code;
-            currentClaimCodeExpiresAt = resp.claim_instructions?.claim_code_expires_at;
-            ShowSentScreen(resp);
+            else
+            {
+                ResetSendState();
+                ShowStep(1);
+            }
         }
 
-        // ------------------------------------------------------------------
-        private void OnResendPinClicked() => _ = RunGuarded(OnResendPinAsync);
-
-        /// <summary>Bug 14: "didn't get the code?" - re-enqueues the same PIN.</summary>
-        private async Task OnResendPinAsync()
+        private void SetRetryVisible(bool visible)
         {
-            if (resendInFlight || string.IsNullOrEmpty(currentTransactionId)) return;
+            if (retryApprovalButton != null)
+                SetActiveSafe(retryApprovalButton.gameObject, visible);
+        }
 
-            float remaining = resendAvailableAt - Time.realtimeSinceStartup;
-            if (remaining > 0f)
-            {
-                SetText(resendPinStatusText, $"You can ask for another code in {Mathf.CeilToInt(remaining)}s.");
-                return;
-            }
-
-            resendInFlight = true;
-            SetBusy(true);
-            try
-            {
-                await APIManager.Instance.ResendSendPinAsync(currentTransactionId);
-                resendAvailableAt = Time.realtimeSinceStartup + ResendCooldownSeconds;
-                SetText(resendPinStatusText, "We sent the code again.");
-                lastSubmittedPin = null;
-                verificationCodeInput?.Clear();
-            }
-            catch (InvoApiException ex)
-            {
-                if (ex.IsRateLimited || string.Equals(ex.ErrorCode, "resend_cooldown", StringComparison.OrdinalIgnoreCase))
-                {
-                    int wait = ex.RetryAfterSeconds ?? (int)ResendCooldownSeconds;
-                    resendAvailableAt = Time.realtimeSinceStartup + wait;
-                    SetText(resendPinStatusText, $"Please wait {wait}s before asking for another code.");
-                }
-                else if (string.Equals(ex.ErrorCode, "pin_expired", StringComparison.OrdinalIgnoreCase))
-                {
-                    SetText(resendPinStatusText, string.Empty);
-                    ShowError("That code expired. Start the send again.");
-                    ResetSendState();
-                    ShowStep(1);
-                }
-                else if (string.Equals(ex.ErrorCode, "resend_unavailable", StringComparison.OrdinalIgnoreCase) ||
-                         ex.StatusCode == 503)
-                {
-                    SetText(resendPinStatusText, string.Empty);
-                    ShowError("We cannot resend codes right now. Please start the send again in a moment.");
-                    ResetSendState();
-                    ShowStep(1);
-                }
-                else
-                {
-                    SetText(resendPinStatusText, DescribeError(ex));
-                }
-            }
-            catch (Exception ex)
-            {
-                SetText(resendPinStatusText, "We could not resend the code. Please try again.");
-                Debug.LogError($"[InvoSDK] ResendSendPin failed: {ex.GetType().Name}");
-            }
-            finally
-            {
-                resendInFlight = false;
-                SetBusy(false);
-            }
+        /// <summary>The SMS code boxes may still be in an older prefab; keep them out of sight.</summary>
+        private void HideLegacySmsWidgets()
+        {
+            if (verificationCodeInput != null) SetActiveSafe(verificationCodeInput.gameObject, false);
+            if (resendPinButton != null) SetActiveSafe(resendPinButton.gameObject, false);
+            if (resendPinStatusText != null) SetActiveSafe(resendPinStatusText.gameObject, false);
+            if (verificationExpiresText != null) SetActiveSafe(verificationExpiresText.gameObject, false);
         }
 
         // ==================================================================
-        // Waiting states (guardian approval / in-app approval)
+        // Waiting states (guardian approval / recipient confirmation)
         // ==================================================================
 
         private void ShowGuardianWaiting(GuardianApproval approval)
@@ -951,116 +876,37 @@ namespace InvoSDK.UI
             ShowWaitingPanel(guardianApprovalPanel, 3);
             string expiry = approval != null ? DescribeExpiry(approval.expires_at, "Approval expires") : string.Empty;
             SetText(guardianApprovalStatusText,
-                "This send is held until the guardian on file approves it by text message. " +
-                "You do not need to do anything else right now. " + expiry);
-            StartApprovalPolling();
+                "This send is held until the guardian on file approves it. " +
+                "Once they do, you approve it on your phone. " + expiry);
+            StartWaitThenApprove();
         }
 
-        private void StartApprovalPolling()
+        private void StartWaitThenApprove()
         {
-            // One poller per send - ShowGuardianWaiting can be reached from both
-            // initiate-send and verify-sms.
-            if (pollingActive || string.IsNullOrEmpty(currentTransactionId)) return;
-            pollingActive = true;
-            _ = RunGuarded(() => PollForApprovalAsync(currentTransactionId));
+            if (waitingInFlight || string.IsNullOrEmpty(currentTransactionId)) return;
+            string transactionId = currentTransactionId;
+            _ = RunGuarded(() => WaitThenApproveAsync(transactionId));
         }
 
-        /// <summary>
-        /// Polls the send's status until the sender's gate clears.
-        /// NOTE: guardian_approval.poll_endpoint (/api/transactions/{id}/approval-status)
-        /// is the dedicated endpoint for the guardian hold, but APIManager exposes no
-        /// generic GET for an arbitrary path, so we poll the send status instead - it
-        /// reports the same awaiting -> approved transition. Wiring the dedicated
-        /// endpoint is an integrator task (README).
-        /// </summary>
-        private async Task PollForApprovalAsync(string transactionId)
+        private async Task WaitThenApproveAsync(string transactionId)
         {
-            var cts = pollCts;
-            if (cts == null) { pollingActive = false; return; }
-            var token = cts.Token;
-            float deadline = Time.realtimeSinceStartup + PollTimeoutSeconds;
-
+            waitingInFlight = true;
             try
             {
-                while (!token.IsCancellationRequested && Time.realtimeSinceStartup < deadline)
+                var token = pollCts != null ? pollCts.Token : CancellationToken.None;
+                var waited = await InvoApprovalStep.WaitUntilApprovableAsync(
+                    transactionId, id => APIManager.Instance.GetSendStatusAsync(id), token);
+                if (this == null || currentTransactionId != transactionId) return;
+                if (waited == null)
                 {
-                    try
-                    {
-                        await Task.Delay(TimeSpan.FromSeconds(PollIntervalSeconds), token);
-                    }
-                    catch (OperationCanceledException) { return; }
-
-                    if (token.IsCancellationRequested || this == null || !isActiveAndEnabled) return;
-                    if (currentTransactionId != transactionId) return; // flow moved on
-
-                    TransactionStatusResponse status;
-                    try
-                    {
-                        status = await APIManager.Instance.GetSendStatusAsync(transactionId);
-                    }
-                    catch (InvoApiException ex)
-                    {
-                        if (ex.IsRateLimited)
-                        {
-                            int wait = ex.RetryAfterSeconds ?? 30;
-                            try { await Task.Delay(TimeSpan.FromSeconds(wait), token); }
-                            catch (OperationCanceledException) { return; }
-                            continue;
-                        }
-                        ShowError(DescribeError(ex));
-                        return;
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError($"[InvoSDK] GetSendStatus failed: {ex.GetType().Name}");
-                        continue;
-                    }
-
-                    if (status == null) continue;
-
-                    string state = status.verification_state;
-                    if (string.Equals(state, "approved", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(state, "completed", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (!string.IsNullOrEmpty(status.claim_code))
-                        {
-                            currentClaimCode = status.claim_code;
-                            ShowSentScreen(null);
-                        }
-                        else
-                        {
-                            // Guardian cleared but the sender still owes the SMS PIN.
-                            ShowStep(3);
-                            SetText(verificationTargetText, "Approved. Enter the code we sent to your phone.");
-                            lastSubmittedPin = null;
-                            verificationCodeInput?.Clear();
-                        }
-                        return;
-                    }
-
-                    if (string.Equals(state, "expired", StringComparison.OrdinalIgnoreCase))
-                    {
-                        ShowError("This send expired before it was approved. Nothing was sent.");
-                        ResetSendState();
-                        ShowStep(1);
-                        return;
-                    }
-
-                    if (string.Equals(state, "failed", StringComparison.OrdinalIgnoreCase))
-                    {
-                        ShowError("This send could not be completed. Nothing was sent.");
-                        ResetSendState();
-                        ShowStep(1);
-                        return;
-                    }
+                    await RunApprovalAsync(transactionId);
+                    return;
                 }
-
-                if (!token.IsCancellationRequested)
-                    ShowError("We are still waiting for approval. You can check back from your history later.");
+                ApplyApprovalResult(waited);
             }
             finally
             {
-                pollingActive = false;
+                waitingInFlight = false;
             }
         }
 
@@ -1070,28 +916,17 @@ namespace InvoSDK.UI
             // approval can release it) but returns the player to a usable screen.
             CancelPolling();
             pollCts = new CancellationTokenSource();
-            pollingActive = false;
-            ShowError("You can come back to this send once it has been approved.");
             ShowStep(3);
+            SetRetryVisible(true);
+            ShowError("You can come back to this send once it has been approved.");
         }
 
         // ==================================================================
-        // Step 4 - sent. The sender shares the claim code; the sender never claims.
+        // Step 4 - sent. The receiver collects it; the sender never claims.
         // ==================================================================
 
-        private void ShowSentScreen(VerifySmsResponse resp)
+        private void ShowSentScreen()
         {
-            if (resp != null)
-            {
-                currentClaimCode = resp.claim_code;
-                currentClaimCodeExpiresAt = resp.claim_instructions?.claim_code_expires_at;
-                if (resp.send_summary != null && !string.IsNullOrEmpty(resp.send_summary.net_amount_for_claim))
-                    authoritativeNetAmount = resp.send_summary.net_amount_for_claim;
-                if (resp.send_summary != null && !string.IsNullOrEmpty(resp.send_summary.sender_current_available_balance))
-                    SetText(availableBalanceText,
-                        $"{resp.send_summary.sender_current_available_balance} {config.gameCurrencyName}");
-            }
-
             string destCurrency = string.IsNullOrEmpty(destinationCurrencyName)
                 ? config.gameCurrencyName
                 : destinationCurrencyName;
@@ -1100,25 +935,26 @@ namespace InvoSDK.UI
                 : authoritativeNetAmount;
 
             bool sameGame = selectedDestination != null && selectedDestination.isSameGame;
-            string whereClaimed = sameGame
-                ? "They claim it from this game's Claim screen, on their own device - " +
-                  "you cannot claim it for them."
-                : "They claim it inside that game, on their own device - it cannot be claimed from here.";
+            string whereCollected = sameGame
+                ? "They collect it from this game's Collect screen, on their own device."
+                : "They collect it inside that game, on their own device.";
 
-            SetText(confirmationTitle, "Sent - share this claim code");
+            SetText(confirmationTitle, "Sent");
             SetText(confirmationSubtitle,
                 $"{netText} {destCurrency} is waiting for {InvoPhone.Mask(normalizedReceiverPhone)} in " +
-                $"{selectedDestination?.gameName ?? "the destination game"}. " +
-                "They also received the code by text. " + whereClaimed);
+                $"{selectedDestination?.gameName ?? "the destination game"}. " + whereCollected);
 
-            // Bug 10: the claim code now has a real surface. It used to exist only
-            // in a Debug.Log, which persists to Player.log and logcat.
-            SetText(claimCodeLabel, string.IsNullOrEmpty(currentClaimCode) ? "-" : currentClaimCode);
+            // A send's claim code goes to the RECEIVER, never back to the sender, so the
+            // claim-code row only shows when a code is actually known.
+            bool hasCode = !string.IsNullOrEmpty(currentClaimCode);
+            if (claimCodeLabel != null) SetActiveSafe(claimCodeLabel.gameObject, hasCode);
+            if (claimCodeExpiryLabel != null) SetActiveSafe(claimCodeExpiryLabel.gameObject, hasCode);
+            if (copyClaimCodeButton != null) SetActiveSafe(copyClaimCodeButton.gameObject, hasCode);
+            SetText(claimCodeLabel, hasCode ? currentClaimCode : string.Empty);
             SetText(claimCodeExpiryLabel, DescribeExpiry(currentClaimCodeExpiresAt, "Claim code expires"));
-            if (copyClaimCodeButton != null)
-                copyClaimCodeButton.interactable = !string.IsNullOrEmpty(currentClaimCode);
 
             ShowStep(4);
+            APIManager.Instance.StartBalancePolling();
         }
 
         private void OnCopyClaimCodeClicked()
@@ -1158,6 +994,143 @@ namespace InvoSDK.UI
             SetText(claimStatusText, string.Empty);
             claimCompleted = false;
             if (claimSubmitButton != null) claimSubmitButton.interactable = true;
+            _ = RunGuarded(RefreshCollectableAsync);
+        }
+
+        /// <summary>
+        /// Looks for a send addressed to the ACTIVE player in this game. The pending list is
+        /// scoped by the player token, so nothing has to be typed in.
+        /// </summary>
+        private async Task RefreshCollectableAsync()
+        {
+            collectable = null;
+            if (collectPendingButton == null) return;
+            SetActiveSafe(collectPendingButton.gameObject, false);
+
+            PendingActionsResponse resp;
+            try
+            {
+                resp = await APIManager.Instance.GetPendingActionsAsync();
+            }
+            catch (InvoApiException ex)
+            {
+                // A player with no account in this game yet has no token: the claim code is the way in.
+                SetText(collectPendingText, string.Equals(ex.ErrorCode, "player_not_found", StringComparison.OrdinalIgnoreCase)
+                    ? "Use the claim code you received to collect."
+                    : string.Empty);
+                return;
+            }
+            if (this == null) return;
+
+            var item = resp?.pending?.Find(p => p.kind == PendingAction.KindReceivingConfirm &&
+                                                p.flow == InvoApprovalFlow.Send && !p.held);
+            if (item == null)
+            {
+                SetText(collectPendingText, "Nothing is waiting to collect right now.");
+                return;
+            }
+
+            collectable = item;
+            SetText(collectPendingText,
+                $"{item.amount} {item.currency} from {item.counterparty_game} is waiting for you.");
+            SetActiveSafe(collectPendingButton.gameObject, true);
+        }
+
+        private void OnCollectPendingClicked() => _ = RunGuarded(CollectPendingAsync);
+
+        /// <summary>The receiver's phone approval (send_receipt) - the same QR flow the sender used.</summary>
+        private async Task CollectPendingAsync()
+        {
+            var item = collectable;
+            if (item == null || claimInFlight) return;
+
+            claimInFlight = true;
+            SetBusy(true);
+            SetText(claimStatusText, string.Empty);
+            try
+            {
+                var token = pollCts != null ? pollCts.Token : CancellationToken.None;
+                InvoDeviceApprovalResult run;
+                try
+                {
+                    run = await InvoDeviceApproval.RunAsync(item.transfer_id, InvoApprovalFlow.SendReceipt, collectApprovalView, token);
+                }
+                catch (InvoApiException ex)
+                {
+                    // The failure may have come after the credit committed; read before reporting.
+                    if (await IsSendCompletedAsync(item.transfer_id))
+                    {
+                        ShowCollected(null, item);
+                        return;
+                    }
+                    SetText(claimStatusText, DescribeCollectError(ex));
+                    return;
+                }
+
+                switch (run.Outcome)
+                {
+                    case InvoDeviceApprovalOutcome.Settled:
+                    case InvoDeviceApprovalOutcome.AlreadySettled:
+                        ShowCollected(run.Settlement != null ? run.Settlement.amount_received : null, item);
+                        break;
+                    case InvoDeviceApprovalOutcome.Held:
+                        SetText(claimStatusText, "Approved. One more check is running; it lands in your balance when it clears.");
+                        break;
+                    case InvoDeviceApprovalOutcome.Denied:
+                        SetText(claimStatusText, "Collection was declined. Nothing changed; you can try again.");
+                        break;
+                    case InvoDeviceApprovalOutcome.Expired:
+                        SetText(claimStatusText, "The QR code expired. Tap Collect to show a new one.");
+                        break;
+                    case InvoDeviceApprovalOutcome.NotPending:
+                        SetText(claimStatusText, "This is no longer waiting - it may have been collected or expired.");
+                        await RefreshCollectableAsync();
+                        break;
+                }
+            }
+            finally
+            {
+                claimInFlight = false;
+                SetBusy(false);
+            }
+        }
+
+        private void ShowCollected(string amountReceived, PendingAction item)
+        {
+            string amount = string.IsNullOrEmpty(amountReceived) ? item.amount : amountReceived;
+            SetText(claimStatusText, $"Collected {amount} {item.currency}.");
+            SetText(collectPendingText, string.Empty);
+            collectable = null;
+            claimCompleted = true;
+            if (collectPendingButton != null) SetActiveSafe(collectPendingButton.gameObject, false);
+            APIManager.Instance.StartBalancePolling();
+        }
+
+        private static async Task<bool> IsSendCompletedAsync(string transactionId)
+        {
+            try
+            {
+                var status = await APIManager.Instance.GetSendStatusAsync(transactionId);
+                return status != null && string.Equals(status.verification_state, "completed", StringComparison.OrdinalIgnoreCase);
+            }
+            catch (InvoApiException)
+            {
+                return false;
+            }
+        }
+
+        private string DescribeCollectError(InvoApiException ex)
+        {
+            switch (ex.ErrorCode)
+            {
+                case "receiver_not_enrolled_use_claim_code":
+                    return "Collect this one with the claim code you received.";
+                case "not_intended_receiver":
+                    return "This send is addressed to a different player or game.";
+                case "RECIPIENT_IDENTITY_DECLINED":
+                    return "The recipient check was declined, so nothing was collected.";
+            }
+            return DescribeError(ex);
         }
 
         private void OnCloseClaimPanel()
@@ -1346,8 +1319,6 @@ namespace InvoSDK.UI
             currentClaimCodeExpiresAt = null;
             currentClientRequestId = null;
             authoritativeNetAmount = null;
-            lastSubmittedPin = null;
-            pollingActive = false;
             CancelPolling();
             pollCts = new CancellationTokenSource();
         }
@@ -1366,12 +1337,10 @@ namespace InvoSDK.UI
             SetText(senderPhoneErrorText, "");
             SetText(receiverPhoneErrorText, "");
             SetText(amountErrorText, "");
-            SetText(resendPinStatusText, "");
             ClearStatus();
             normalizedSenderPhone = normalizedReceiverPhone = null;
             receiverEmailValue = null;
             ResetSendState();
-            verificationCodeInput?.Clear();
             ShowStep(1);
         }
 
@@ -1427,6 +1396,11 @@ namespace InvoSDK.UI
                 }
                 return "That request was already processed. Nothing was charged twice.";
             }
+
+            if (string.Equals(ex.ErrorCode, "TENANT_NOT_MIGRATED", StringComparison.OrdinalIgnoreCase))
+                return "Phone approval is not enabled for this game yet. Contact Invo to enable it.";
+            if (string.Equals(ex.ErrorCode, APIManager.GameServerRequiredCode, StringComparison.Ordinal))
+                return "This build is not connected to its game server.";
 
             switch (ex.StatusCode)
             {

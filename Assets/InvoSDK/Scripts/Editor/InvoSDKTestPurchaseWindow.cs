@@ -2,7 +2,7 @@ using UnityEditor;
 using UnityEngine;
 using System.Threading.Tasks;
 using UnityEngine.Networking;
-using Unity.Plastic.Newtonsoft.Json;
+using Newtonsoft.Json;
 
 namespace InvoSDK.Editor
 {

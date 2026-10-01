@@ -10,7 +10,12 @@ namespace InvoSDK
     /// Hosted approval on mobile: open INVO's hosted approval page in the SYSTEM browser and
     /// learn when it finishes, then show the match-code prompt for a first-time phone.
     ///
-    /// Two halves. The game SERVER calls
+    /// Most games never call this class directly: <see cref="InvoDeviceApproval.RunAsync"/> runs
+    /// begin, this browser hand-off, the poll and the settle itself with the player token (and
+    /// draws a QR instead on desktop and consoles). The server-held variant below is still
+    /// supported for games that keep <c>device_code</c> off the device.
+    ///
+    /// Server-held variant, two halves. The game SERVER calls
     /// <c>POST /api/sdk/approvals/device/begin {transaction_id, flow, "channel": "app_browser"}</c>,
     /// keeps <c>device_code</c> and polls; it hands the client only
     /// <see cref="HostedApprovalHandoff"/>. The client half is this class:
