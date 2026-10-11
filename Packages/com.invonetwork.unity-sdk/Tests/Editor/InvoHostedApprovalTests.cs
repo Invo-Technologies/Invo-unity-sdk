@@ -1,6 +1,3 @@
-// Compiled only when the Unity Test Framework is installed (it defines UNITY_INCLUDE_TESTS);
-// customer projects without it must not get a compile error from the SDK.
-#if UNITY_INCLUDE_TESTS
 using System;
 using System.Collections.Generic;
 using NUnit.Framework;
@@ -288,4 +285,3 @@ namespace InvoSDK.Tests
         }
     }
 }
-#endif // UNITY_INCLUDE_TESTS

@@ -1,0 +1,34 @@
+{
+  "name": "com.invonetwork.unity-sdk",
+  "version": "3.1.0",
+  "displayName": "Invo SDK",
+  "description": "Invo in-game currency SDK: item purchases, player balance, send and transfer with QR phone approval, and drop-in uGUI panels.",
+  "unity": "2021.3",
+  "documentationUrl": "https://docs.invo.network/docs/unity-sdk",
+  "changelogUrl": "https://github.com/Invo-Technologies/Invo-unity-sdk/blob/main/Packages/com.invonetwork.unity-sdk/CHANGELOG.md",
+  "author": {
+    "name": "Invo Technologies",
+    "url": "https://invo.network"
+  },
+  "keywords": [
+    "invo",
+    "currency",
+    "payments"
+  ],
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1",
+    "com.unity.ugui": "1.0.0",
+    "com.unity.modules.unitywebrequest": "1.0.0",
+    "com.unity.modules.unitywebrequesttexture": "1.0.0",
+    "com.unity.modules.androidjni": "1.0.0",
+    "com.unity.modules.ui": "1.0.0",
+    "com.unity.modules.imgui": "1.0.0"
+  },
+  "samples": [
+    {
+      "displayName": "Demo",
+      "description": "A demo scene with the Invo SDK window, an EventSystem and sample item catalog and window config assets.",
+      "path": "Samples~/Demo"
+    }
+  ]
+}
