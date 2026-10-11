@@ -878,7 +878,7 @@ namespace InvoSDK
             else
                 GameServerRequestDecorator?.Invoke(req);
 
-            await req.SendWebRequest();
+            await InvoWebRequest.SendAsync(req);
             return HandleResponse(method, url, req, onSuccess, onError);
         }
 
@@ -901,7 +901,7 @@ namespace InvoSDK
 
                 using var req = BuildRequest(method, url, payload);
                 req.SetRequestHeader("Authorization", "Bearer " + token);
-                await req.SendWebRequest();
+                await InvoWebRequest.SendAsync(req);
 
                 // A token 401 is rejected before the route runs, so one re-mint and retry is safe
                 // even on the money calls. Never re-prompt the player for it.
@@ -1098,7 +1098,7 @@ namespace InvoSDK
         {
             if (string.IsNullOrEmpty(url)) return null;
             using var req = UnityWebRequestTexture.GetTexture(url);
-            await req.SendWebRequest();
+            await InvoWebRequest.SendAsync(req);
 
             if (req.result != UnityWebRequest.Result.Success)
             {

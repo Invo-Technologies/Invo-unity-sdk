@@ -1459,7 +1459,7 @@ namespace InvoSDK.UI
         {
             if (string.IsNullOrEmpty(url) || target == null) return;
             using var req = UnityWebRequestTexture.GetTexture(url);
-            await req.SendWebRequest();
+            await InvoWebRequest.SendAsync(req);
             if (this == null || target == null) return;
             if (req.result == UnityWebRequest.Result.Success)
             {

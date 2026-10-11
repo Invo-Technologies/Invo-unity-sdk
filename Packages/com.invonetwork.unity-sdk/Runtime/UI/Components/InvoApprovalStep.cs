@@ -266,7 +266,7 @@ namespace InvoSDK.UI
         {
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(seconds), token);
+                await InvoDelay.Seconds(seconds, token);
                 return !token.IsCancellationRequested;
             }
             catch (OperationCanceledException)

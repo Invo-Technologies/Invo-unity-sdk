@@ -877,7 +877,7 @@ namespace InvoSDK.UI
             try
             {
                 using var req = UnityWebRequestTexture.GetTexture(url);
-                await req.SendWebRequest();
+                await InvoWebRequest.SendAsync(req);
 
                 if (req.result != UnityWebRequest.Result.Success || targetImage == null) return;
 

@@ -343,7 +343,7 @@ namespace InvoSDK.UI
             req.SetRequestHeader("Content-Type", "application/json");
             // Deliberately no SDK key: this is the partner's own endpoint, and the secret stays server-side.
 
-            await req.SendWebRequest();
+            await InvoWebRequest.SendAsync(req);
 
             if (req.result != UnityWebRequest.Result.Success || req.responseCode < 200 || req.responseCode > 299)
             {

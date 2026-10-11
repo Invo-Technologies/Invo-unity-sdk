@@ -237,7 +237,7 @@ namespace InvoSDK
                 return false;
             try
             {
-                Task delay = Task.Delay(TimeSpan.FromSeconds(seconds), token);
+                Task delay = InvoDelay.Seconds(seconds, token);
                 await Task.WhenAny(delay, wake);
             }
             catch (OperationCanceledException)
