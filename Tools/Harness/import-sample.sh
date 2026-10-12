@@ -11,6 +11,7 @@ rm -rf "$H/Assets/Samples/Invo SDK"
 mkdir -p "$DST"
 cp -r "$REPO/Packages/com.invonetwork.unity-sdk/Samples~/Demo/." "$DST/"
 mkdir -p "$H/Assets/Editor/InvoHarness"
+rm -f "$H"/Assets/Editor/InvoHarness/*.cs "$H"/Assets/Editor/InvoHarness/*.cs.meta
 cp "$REPO"/Tools/Harness/Editor/*.cs "$H/Assets/Editor/InvoHarness/"
 if [ ! -d "$H/Assets/TextMesh Pro" ]; then
   PKG=$(ls -d "$H"/Library/PackageCache/com.unity.textmeshpro@* "$H"/Library/PackageCache/com.unity.ugui@* 2>/dev/null \

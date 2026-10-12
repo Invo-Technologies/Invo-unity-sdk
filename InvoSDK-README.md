@@ -1,14 +1,14 @@
 # InvoSDK Unity Plugin
 
-Unity 6 plugin for the Invo platform: player balances, item purchases, cross-game transfers, and player-to-player currency sends, approved on the player's phone by QR code.
+Unity package (Unity 2021.3 LTS or newer) for the Invo platform: player balances, a store (top up
+with real money, spend on items), cross-game transfers and player-to-player sends approved on the
+player's phone, collecting what was sent to you, and phone-number changes. Runs on Windows, macOS,
+Linux, Android, iOS, WebGL and consoles.
 
-> ## ⚠️ Action required in 3.0.0: update your UI
->
-> **SMS verification has been removed.** Sends and transfers are now approved on the player's phone: a **QR code** on desktop, Steam and console builds, and **INVO's page in the system browser** on iOS and Android. No code is texted, and nothing is typed.
->
-> **Your scenes and prefabs must be updated by hand.** 3.0.0 was written and compile-checked without the Unity editor, so no scene or prefab in this repository was touched. `SenderCurrencyPanel` and `TransferCurrencyPanel` still contain the old SMS code boxes, and their new QR fields (`approvalView`, `retryApprovalButton`, `collectPendingButton`) are unassigned. The panels hide the legacy widgets and fall back to a plain built-in QR overlay, so nothing crashes, but **every developer must do the wiring in [Updating your UI for 3.0.0](#updating-your-ui-for-300) before shipping.**
->
-> **Production now needs your game server.** The SDK no longer sends the game secret from a production build. Set `gameServerUrl`, or sends, transfers, purchases and approvals are refused in production. See [Server-side proxy](#server-side-proxy).
+> **3.1.0** is a package (`Packages/com.invonetwork.unity-sdk`) with a new themeable UI, separate
+> Sandbox and Production settings, and the 3.0.0 UI work done: the prefabs are wired and the SMS
+> widgets are gone. Upgrading from a copied `Assets/InvoSDK` folder? See
+> [Upgrading from 3.0](#upgrading-from-30).
 
 > **Read [What You Must Wire Yourself](#what-you-must-wire-yourself) before you plan the work.** This plugin is a client. Several flows need a server you host, and one of them — real-money purchases — cannot work at all until you do. That section is the honest list of what is not in the box.
 
@@ -26,7 +26,7 @@ Unity 6 plugin for the Invo platform: player balances, item purchases, cross-gam
 - [Money and locales](#money-and-locales)
 - [Idempotency](#idempotency)
 - [UI components](#ui-components)
-- [Updating your UI for 3.0.0](#updating-your-ui-for-300)
+- [Upgrading from 3.0](#upgrading-from-30)
 - [Phone approval (QR)](#phone-approval-qr)
 - [Editor tools](#editor-tools)
 - [What You Must Wire Yourself](#what-you-must-wire-yourself)
@@ -46,11 +46,12 @@ Unity 6 plugin for the Invo platform: player balances, item purchases, cross-gam
 
 Sandbox and production are **fully isolated databases with independent SDK keys**. A sandbox key does not work against production, and vice versa.
 
-Toggle with `useProduction` on the config asset.
+Each environment has its own Game ID and its own keys. Pick the environment in **InvoSDK > Settings**
+("Play Mode and builds use"), which sets `useProduction` on the config asset.
 
 > **Two credentials, never mixed.**
 >
-> - The **game secret** (`X-Game-Secret-Key`) authenticates your *game*. It is used for initiate, purchase, catalog, balance and claims, and for minting player tokens. It belongs on your server. In production the SDK sends these calls to `gameServerUrl`; only a sandbox build may use the `sdkKey` from the config.
+> - The **game secret** (`X-Game-Secret-Key`) authenticates your *game*. It is used for initiate, purchase, catalog, balance and claims, and for minting player tokens. It belongs on your server. In production the SDK sends these calls to `gameServerUrl`; only a sandbox build may use a sandbox key from the config.
 > - A **player token** (`Authorization: Bearer`, 15 minutes, one player) authenticates the *player*. It is used for the phone approval, the approve / confirm-receipt calls that move the money, and the pending list. It is safe on the device. The SDK mints and re-mints it for you.
 >
 > There is no player login against Invo itself. The old `/auth/login` + CSRF handshake was removed in 2.0.0.
@@ -59,13 +60,22 @@ Toggle with `useProduction` on the config asset.
 
 ## Installation
 
-**Requirements:** Unity 6 (6000.0+), .NET Standard 2.1, `com.unity.nuget.newtonsoft-json`, TextMeshPro.
+**Requirements:** Unity 2021.3 LTS or newer (tested on 2021.3.45f2, 2022.3.62f3 and 6000.0.58f2).
+Dependencies `com.unity.nuget.newtonsoft-json` and `com.unity.ugui` are installed with the package.
+On 2021.3 and 2022.3 TextMeshPro is the separate `com.unity.textmeshpro` package; the SDK offers to
+add it when it is missing.
 
-1. Copy `Assets/InvoSDK/` and `Assets/APIManager.cs` into your project's `Assets` folder.
-2. Install Newtonsoft.Json via **Window → Package Manager**.
-3. Open **InvoSDK → Setup Wizard** and fill in your credentials.
+1. **Window > Package Manager > + > Add package from git URL**:
+   `https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.0`
+   (or import `InvoSDK-3.1.0.unitypackage` from the release).
+2. **InvoSDK > Settings** (see [Configuration](#configuration)).
+3. Drag `InvoAPI.prefab` and `InvoSDKWindow.prefab` (package `Runtime/Prefabs`) into your first scene,
+   with an EventSystem whose input module matches your project's input handling.
 
-The config asset is created at `Assets/InvoSDK/Resources/InvoSDKConfig.asset`. If you find a second one at `Assets/Resources/InvoSDKConfig.asset`, delete it — two identically-named assets in two `Resources` roots make `Resources.Load` resolution undefined, and you can end up building against the wrong key. The Setup Wizard detects this and offers to select the stray asset for you.
+The config asset is created at `Assets/InvoSDK/Resources/InvoSDKConfig.asset`. If you find a second one
+at `Assets/Resources/InvoSDKConfig.asset`, delete it: two identically-named assets in two `Resources`
+roots make `Resources.Load` resolution undefined, and you can end up building against the wrong key.
+The Settings window detects this and offers to select the stray asset.
 
 `InvoSDKConfig.asset` is **gitignored**. Each developer configures their own; it will not arrive with a clone.
 
@@ -73,23 +83,33 @@ The config asset is created at `Assets/InvoSDK/Resources/InvoSDKConfig.asset`. I
 
 ## Configuration
 
-| Field | Notes |
-|---|---|
-| `sdkKey` | Your game's `ivsdk_…` key. **Sandbox only** — the SDK refuses to use it in production. See the warning below. |
-| `gameServerUrl` | Base URL of **your** server. **Required for production.** Every game-secret call goes to `<gameServerUrl>/api/<Invo path>`. See [Server-side proxy](#server-side-proxy). |
-| `gameId` | Your game's ID from the console. Not secret. Also names the mobile return scheme `invo-sdk-<gameId>://done`. |
-| `checkoutSessionEndpoint` | https URL on **your** server that mints hosted-checkout sessions. Set once here; an individual `InvoSDKFeaturedPanel` can override it in the Inspector. See [§2](#2-a-hosted-checkout-endpoint-required-for-real-money-purchases). |
-| `gameName`, `gameCurrencyName`, `gameIconUrl`, `gameCurrencyUrl`, `gameVersion` | Display values. |
-| `playerEmail`, `playerName`, `playerPhone` | Demo/testing convenience: the initial active player. In a real game call `APIManager.Instance.SetActivePlayer(...)` from your login. |
-| `useProduction` | Sandbox by default. |
+**InvoSDK > Settings** has three tabs.
 
-> ### The key in this config ships in your build
+| Tab | Fields |
+|---|---|
+| **Sandbox** | Sandbox Game ID; one sandbox key (`ivsdk_…`) per storefront: Steam, Google Play, App Store, PlayStation, Xbox, Nintendo Switch, and Epic Games Store, Web or Platform if you add them; which storefront each build target uses; the test player (email, phone, name); the SANDBOX watermark for development builds. Test connection checks the Game ID and key. |
+| **Production** | Production Game ID, `gameServerUrl` (required, https) and `checkoutSessionEndpoint`. **No key fields, by design.** Your server holds one production key per storefront. |
+| **Game & display** | `gameName`, `gameIconUrl`, `gameCurrencyName`, `gameCurrencyUrl`, `gameVersion`. |
+
+- The SDK picks the key for the storefront the build runs on (`InvoSDKConfig.ActiveSandboxKey`),
+  and sends that storefront to your game server as `X-Invo-Storefront` (`steam`, `google_play`,
+  `app_store`, `playstation`, `xbox`, `nintendo_switch`, `epic_games_store`, `web`, `platform`).
+  A scripting define such as `INVO_STOREFRONT_EPICGAMESSTORE` overrides it for one build.
+- **Production build check.** A production build fails without a production Game ID or an https
+  Game Server URL. Sandbox keys and the test player are stripped from it and restored afterwards.
+- **3.0 fields.** `sdkKey` and `gameId` still work when the new fields are empty; the Settings window
+  moves them into the Sandbox tab with one button.
+- `gameId` also names the mobile return scheme `invo-sdk-<gameId>://done` (the active environment's ID).
+- `playerEmail`, `playerName`, `playerPhone` are the test player. In a real game call
+  `APIManager.Instance.SetActivePlayer(email, name, phone)` from your login.
+
+> ### A sandbox key ships in sandbox builds
 >
-> Unity bundles everything under a `Resources/` folder into the player. Anyone can recover the key from `resources.assets` with `strings` in about a minute.
->
-> An extracted key is a **full tenant credential**. It can charge cards, move any player's balance, request a bank payout of your revenue, mint player tokens for any player in your game, and reconfigure your webhooks. There is no per-scope restriction and no IP allowlist. There is also **no environment marker on the key** — sandbox and production keys look identical, so a misplaced value is not visually obvious.
->
-> Until you have a [server-side proxy](#server-side-proxy), treat any key you put here as public, and only ever put a **sandbox** key there.
+> Unity bundles everything under a `Resources/` folder into the player. Anyone can recover a key from
+> `resources.assets` in about a minute. An extracted key is a **full tenant credential**: it can charge
+> cards, move any player's balance, request a payout, mint player tokens and reconfigure webhooks.
+> Sandbox and production keys look identical. That is why only the Sandbox tab takes keys, and why
+> production builds are stripped of them.
 
 **If a key leaks, rotate it with `immediate: true`.** The default rotation keeps the old key working for a 7-day grace window, and that grace is not honored uniformly across endpoints — some accept the previous key during the window while others reject it at once. For a leaked key, take the hard cutover.
 
@@ -251,20 +271,45 @@ Do not use a `client_request_id` beginning with `sub_`; that prefix is reserved 
 
 ## UI components
 
-Under `Assets/InvoSDK/Scripts/UI/`. Treat them as working references, not a finished storefront.
+The window (`InvoSDKWindow.prefab`) has tabs for **Store**, **Send**, **Transfer** and **Collect**,
+a phone button and a close button. Open it from your own UI with
+`InvoSDKWindowController.Instance.Open("Store" | "Sender" | "Transfer" | "Collect" | "Phone")`.
 
-- **Item purchase** — `ItemPurchasePanel`, `ItemPurchaseConfirmPanel`, `ItemCardView`
-- **Transfers** — `TransferCurrencyPanel` (4-step wizard; step 3 is the phone approval)
-- **Sends** — `SenderCurrencyPanel` (4-step wizard plus the receiver's Collect / claim panel)
-- **Phone approval** — `InvoDeviceApprovalPanelView` (uGUI QR view), `InvoDeviceApprovalOverlay` (IMGUI fallback), `InvoApprovalStep` (the shared verification step, holds and status read-back)
-- **Featured** — `InvoSDKFeaturedPanel`, `FeaturedItemCard`, `FeatureDailyItemCard`, `FeatureWeeklyItemCard`
-- **Infrastructure** — `InvoSDKWindowManager`, `InvoUIButtonBinder`, `VerificationCodeInput` (legacy; no longer used by the panels)
+| Panel | Components |
+|---|---|
+| Store: Top up | `InvoSDKFeaturedPanel` with `FeaturedItemCard`, `FeatureWeeklyItemCard`, `FeatureDailyItemCard` (real-money packs through hosted checkout) |
+| Store: Items | `ItemPurchasePanel`, `ItemPurchaseConfirmPanel`, `ItemCardView` (spend the balance) |
+| Send | `SenderCurrencyPanel` with `InvoRecentRecipients`, `InvoGamePicker`, `InvoDeviceApprovalPanelView` |
+| Transfer | `TransferCurrencyPanel` with `InvoGamePicker`, `InvoDeviceApprovalPanelView` |
+| Collect | `InvoCollectPanel`, `InvoPendingItemView` |
+| Phone | `InvoPhoneSettingsPanel` |
+| Shared | `InvoEnrollmentPromptPanel` (match code), `InvoApprovalStep`, `InvoBalanceLabel`, `InvoSandboxWatermark`, `InvoGamepadFocus`, `InvoSafeArea`, `InvoTabBar`, `InvoSDKWindowManager` |
 
-**Scene wiring.** ⚠️ The 3.0.0 panels need new fields wired. See [Updating your UI for 3.0.0](#updating-your-ui-for-300). Several older fields in the bundled `MainScene` are also unassigned, including the transfer panel's phone inputs and status label. The panels log a clear error naming the missing field rather than throwing a swallowed `NullReferenceException`.
+**Theme.** Every graphic has `InvoThemed` (a role such as Surface, Accent or TextSecondary, a shape and
+a text style); `InvoThemeProvider` on the window root picks the `InvoTheme` asset. Duplicate
+`InvoDefaultTheme`, change it and assign it: every panel restyles live, without prefab edits.
 
-Optional serialized fields worth wiring: per-field error labels, `destinationsStatusText`, `feeEstimateNoticeText`, `guardianApprovalGroup`, `claimCodeText`, `claimCodeExpiryText`, `emptyStateText`, `balanceText`.
+**Send.** The sender is the active player: their phone is shown masked with a Change link instead of
+an input. Recent recipients come from `InvoRecentRecipientsStore` (this device only, the last five per
+player, keyed by a hash of the email), because INVO's API does not return recipients' numbers.
+The game picker lists games the player already plays first (`GetPlayerDestinationsAsync`), then every
+destination, filtered as they type; unavailable games stay listed, greyed, with the reason.
 
-> **Claim codes are fallback now.** Receivers collect with their own phone approval. A claim code only matters for a receiver who has no account in the receiving game yet. Claim codes are still bearer credentials, so they are never logged: Unity's `Debug.Log` persists to `Player.log` and logcat.
+**Collect.** Lists `receiving_confirm` items from `GetPendingActionsAsync`, each with Collect (the
+receiver's phone approval). Held items are greyed with the reason. There is no claim-code form:
+INVO is retiring claim codes, and a receiver with no account in this game collects through the link
+INVO emails them. `ClaimCurrencyAsync` / `ClaimTransferAsync` remain for existing integrations.
+Claim codes are bearer credentials, so they are never logged.
+
+**Phone.** `ChangePlayerPhoneAsync` switches an unsecured account at once. A secured account answers
+`409 PHONE_CHANGE_REQUIRES_VERIFICATION`; the panel then calls `CreatePhoneChangeRequestAsync`, INVO
+emails the player a link to confirm on INVO's page (no text message), and the panel polls
+`GetPhoneChangeRequestAsync` and calls `ApplyConfirmedPhone`. Save the new number in your own account
+system too (`APIManager.PlayerPhoneChanged`).
+
+**Platforms.** Desktop and consoles show a QR; phones open INVO's page in the system browser.
+`InvoGamepadFocus` gives every screen d-pad and keyboard navigation; `InvoSafeArea` keeps the sheet
+clear of notches and overscan; phone fields open the phone pad.
 
 **Fees.** Panels show a local estimate before initiate, then replace it with `fees_preview` from the response. Always display the returned figures — per-tenant rate overrides mean a client-side calculation can be wrong.
 
@@ -272,62 +317,17 @@ Optional serialized fields worth wiring: per-field error labels, `destinationsSt
 
 ---
 
-## Updating your UI for 3.0.0
+## Upgrading from 3.0
 
-> **This is a required step, not an optional polish pass.** 3.0.0 was built and compile-checked without a Unity editor, so **no scene or prefab in this repository was changed**. The panels still contain the old SMS code boxes and "Resend code" buttons, and the new QR fields are unassigned. The code copes with that — legacy widgets are hidden at runtime and the QR falls back to a plain built-in overlay — but your players will see an unstyled overlay and empty spaces until you do the wiring below.
-
-Do this in **every scene and prefab** that contains `SenderCurrencyPanel` or `TransferCurrencyPanel` (the bundled `MainScene` contains both).
-
-### 1. Add the QR view to step 3
-
-1. Inside the step-3 panel (`step3Panel` on the send panel, `inAppApprovalGroup` on the transfer panel), create a child object and add **`InvoDeviceApprovalPanelView`**.
-2. Under it add:
-   - a **`RawImage`** for the QR. Keep it **square** (1:1, at least ~220 px on a 1080p screen) with nothing drawn over it. The texture already includes the white quiet zone; do not crop or tint it.
-   - `TMP_Text` for the headline ("Scan with your phone to approve"), the manual-entry line ("Or go to … and enter ABCD-EFGH"), and a status line.
-   - a **Cancel** button and, for mobile builds, an **Open again** button.
-3. Assign those to the view's fields (`qrImage`, `headlineText`, `manualEntryText`, `statusText`, `cancelButton`, `reopenButton`).
-4. Assign the view to the panel's new **`approvalView`** field.
-
-If `approvalView` is left empty, the SDK draws `InvoDeviceApprovalOverlay` (IMGUI) instead. That is fine for testing, but it does not match your art and it does not block input to the uGUI underneath.
-
-### 2. New fields on the panels
-
-| Panel | Field | What to assign |
-|---|---|---|
-| `SenderCurrencyPanel` | `approvalView` | The `InvoDeviceApprovalPanelView` from step 1. |
-| | `retryApprovalButton` | A "Show code again" button in step 3. Appears after a decline, an expired code or a cancel. |
-| | `verificationTargetText` | (existing) Now the instruction line above the QR. |
-| | `collectPendingButton`, `collectPendingText` | In the claim panel: a **Collect** button and a line describing what is waiting. This is the receiver's one-tap QR collect. |
-| | `collectApprovalView` | A second `InvoDeviceApprovalPanelView` **inside `claimPanel`** for the receiver's QR. Do not reuse `approvalView`: step 3 is hidden while the claim panel is open. Empty = built-in overlay. |
-| `TransferCurrencyPanel` | `approvalView` | The view from step 1, inside `inAppApprovalGroup`. |
-| | `retryApprovalButton` | "Show code again" in step 3. |
-| | `inAppApprovalGroup`, `inAppApprovalText` | (existing) Now the container and instruction line for the phone approval. **No longer optional.** |
-
-### 3. Remove the SMS widgets
-
-These fields are kept only so old prefabs keep loading. The panels **hide** them at runtime, but delete them from your layouts so they do not leave gaps:
-
-| Panel | Legacy fields |
-|---|---|
-| `SenderCurrencyPanel` | `verificationCodeInput`, `resendPinButton`, `resendPinStatusText`, `verificationExpiresText` |
-| `TransferCurrencyPanel` | `verificationCodeInput`, `smsVerificationGroup`, `resendPinButton`, `resendPinLabelText`, `step3VerifyButton` |
-
-`VerificationCodeInput` itself remains in the package for games that still use it elsewhere.
-
-### 4. Re-word the screens
-
-- Step 3 is no longer "Enter the code we sent you". It is "Scan with your phone and approve" (desktop/console) or "Approve on the INVO page" (mobile).
-- The send panel's step 4 no longer shows a claim code to the sender: the receiver collects in their own game. `claimCodeLabel`, `claimCodeExpiryLabel` and `copyClaimCodeButton` are hidden unless a code exists.
-- The transfer panel's step 4 shows the self-claim code only as a fallback ("If the other game asks for a claim code, use this one").
-- The claim panel should lead with **Collect**, with the claim-code form as the fallback underneath.
-
-### 5. Match-code prompt (first-time phones)
-
-The first time a phone approves, the game screen shows "Set up INVO on this phone? Code 1234" with Yes / No. By default this is the IMGUI `InvoEnrollmentPromptOverlay`. To restyle it, implement `IInvoEnrollmentPromptView` and assign it to `InvoHostedApproval.PromptView` at startup.
-
-### 6. Check it
-
-In a sandbox build on desktop: start a send, confirm that a QR appears in your styled view, scan it with a phone, approve, and confirm the panel reaches step 4. Then press **Cancel** during a second attempt and confirm **Show code again** appears.
+1. Keep `Assets/InvoSDK/Resources`. Delete the rest of the copied SDK (`Assets/APIManager.cs`,
+   `Assets/InvoSDK/Scripts`, `Tests`, `Prefabs`, `Inter`, `NewArt`, `Sprites`, and
+   `Assets/Plugins/iOS/InvoHostedApproval.mm`), then install the package. Every file kept its GUID.
+2. **InvoSDK > Settings > Move the 3.0 key and Game ID into Sandbox**, then fill in the Production tab.
+3. Replace your SDK UI with `InvoSDKWindow.prefab`, or keep your own: the 3.0 panel components and
+   their fields are unchanged, and the 3.1 additions (`gamePicker`, `recentRecipients`,
+   `senderPhoneText`, `ownPhoneText`, ...) are optional.
+4. A custom 3.0 layout still needs the QR view wired (`approvalView`, `retryApprovalButton`);
+   `InvoDeviceApprovalPanelView` can now be saved in scenes and prefabs (3.0 could not).
 
 ---
 
@@ -405,9 +405,9 @@ string token = await APIManager.Instance.GetPlayerTokenAsync();
 ---
 ## Editor tools
 
-`InvoSDK →` **Setup Wizard**, **Item Catalog**, **Test Purchase**, **Player Balance**.
+`InvoSDK →` **Settings** (also **Setup Wizard**), **Item Catalog**, **Test Purchase**, **Player Balance**.
 
-These are Editor-only and never ship in a player build, so they use the SDK key directly — which is correct for a development tool.
+These are Editor-only and never ship in a player build. They use the sandbox key for the desktop storefront.
 
 Test Purchase handles `200` with `status: "requires_action"` correctly: that means 3DS is required and **no money has been charged**.
 
@@ -445,7 +445,7 @@ Your server needs two jobs:
 
 **Status: the plugin calls an endpoint you configure. You must host it.**
 
-Set `checkoutSessionEndpoint` to an **https** URL on your server — once in **InvoSDK → Setup Wizard**, which writes it to `InvoSDKConfig`. An individual `InvoSDKFeaturedPanel` can override it with its own Inspector field; blank means "use the config value". The plugin POSTs `{player_email, usd_amount}` and expects `{"checkout_url": "..."}`.
+Set `checkoutSessionEndpoint` to an **https** URL on your server — once in **InvoSDK → Settings › Production**, which writes it to `InvoSDKConfig`. An individual `InvoSDKFeaturedPanel` can override it with its own Inspector field; blank means "use the config value". The plugin POSTs `{player_email, usd_amount}` and expects `{"checkout_url": "..."}`.
 
 Your endpoint calls:
 
@@ -479,7 +479,7 @@ For in-app completion signals you need native bridges — an iOS `WKScriptMessag
 
 What remains on your side:
 
-- **Wire the UI.** See [Updating your UI for 3.0.0](#updating-your-ui-for-300).
+- **Wire the UI.** The 3.1 prefabs come wired; for a custom 3.0 layout see [Upgrading from 3.0](#upgrading-from-30).
 - **Enable your tenant.** The `/api/sdk/*` routes answer `403 TENANT_NOT_MIGRATED` until Invo enables SDK verification for your game, and `503 DEVICE_APPROVAL_NOT_CONFIGURED` / `sdk_verification_disabled` while it is switched off. Coordinate the sandbox switch with Invo first.
 - **Register the mobile return scheme.** `invo-sdk-<gameId>://done` is registered at build time by `InvoHostedApprovalBuildPostprocessor` (iOS `Info.plist`, Android manifest). See README.md → [Hosted approval on mobile](README.md#hosted-approval-on-mobile-system-browser).
 - **Not implemented:** the in-app device-signature path (`device/register` + a hardware-keystore `device_signal`) and in-engine WebAuthn. The QR and system-browser grant replaces both for engine builds; Invo's own guidance is to use the grant unless you hold a verified passkey domain.
@@ -575,7 +575,7 @@ Hosted checkout is separate: it keeps its own `checkoutSessionEndpoint` (§2).
 
 | Symptom | Cause |
 |---|---|
-| `Config not found! Please run Setup Wizard.` | No `InvoSDKConfig.asset` under a `Resources` folder. It is gitignored — create your own. |
+| `Config not found! Please run Setup Wizard.` | No `InvoSDKConfig.asset` under a `Resources` folder. It is gitignored: open **InvoSDK > Settings** to create yours. |
 | `400 "Invalid price format"` | A locale emitted a comma decimal. Use `InvoFormat.Amount(...)`. |
 | `400 "Phone number must start with country code"` | Missing `+`. Use `InvoPhone.Normalize(...)`. |
 | `SDK_GAME_SERVER_REQUIRED` | Production build with no `gameServerUrl`. See [Server-side proxy](#server-side-proxy). |

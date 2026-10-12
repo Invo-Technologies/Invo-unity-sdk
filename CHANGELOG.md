@@ -7,6 +7,85 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [3.1.0] — 2026-10-12
+
+The SDK is now a Unity package that supports Unity 2021.3 LTS and newer, with a new
+themeable UI, separate Sandbox and Production settings, and the 3.0.0 UI work finished.
+Tested on Unity 2021.3.45f2, 2022.3.62f3 and 6000.0.58f2 (see the pull request's test matrix).
+
+### Breaking
+
+- **Install as a package.** The SDK moved from `Assets/InvoSDK` + `Assets/APIManager.cs` to
+  `Packages/com.invonetwork.unity-sdk`. Install it by git URL
+  (`https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.0`)
+  or from the release's `.unitypackage`. Every file kept its GUID, so scenes and prefabs that
+  reference SDK scripts, sprites or prefabs keep working; delete the old copied files first.
+  Keep `Assets/InvoSDK/Resources` (your config, catalog and window config).
+- **New prefabs replace `MainScene`'s panels.** Use `Runtime/Prefabs/InvoSDKWindow.prefab`
+  and `InvoAPI.prefab`. The 3.0 panel components are unchanged, so a custom 3.0 layout still
+  works.
+- **Production keys are never in the project.** The Production tab has no key fields, and a
+  production build fails without a production Game ID or an https Game Server URL. Sandbox
+  keys and the test player are stripped from production builds.
+
+### Added
+
+- **Unity 2021.3 / 2022.3 support.** `InvoWebRequest.SendAsync` replaces
+  `await req.SendWebRequest()` (2023.1+ only); `InvoDelay` replaces `Task.Delay` in polling
+  so it also works on WebGL. Assemblies `InvoSDK.Runtime`, `InvoSDK.Editor`,
+  `InvoSDK.Editor.Setup` and `InvoSDK.Tests.Editor`. On 2021.3/2022.3 the SDK offers to add
+  `com.unity.textmeshpro` when it is missing.
+- **Settings window** (InvoSDK > Settings): Sandbox, Production and Game & display tabs.
+  Separate Game IDs per environment, one sandbox key per storefront (Steam, Google Play,
+  App Store, PlayStation, Xbox, Nintendo Switch, plus Epic Games Store, Web, Platform),
+  a build-target-to-storefront map, Test connection, a SANDBOX watermark for development
+  builds, and a one-click migration of 3.0 settings. Requests to your game server carry
+  `X-Invo-Storefront` so it can attach that storefront's production key.
+- **New UI**, themeable from one `InvoTheme` asset (colours, font, radius, spacing; default
+  dark theme and an example light theme), with `InvoThemeProvider` and `InvoThemed`:
+  - Store: **Top up** (real-money currency packs through INVO hosted checkout) and
+    **Items** (spend the balance), with a live balance.
+  - Send: the player's own phone (masked, with Change) instead of a field, recent
+    recipients, a Plaid-style game picker with search, review, QR approval and holds.
+  - Transfer: the player's own balance between games.
+  - Collect: everything waiting for the player, each with Collect; held items greyed.
+  - Phone settings: change the player's number; secured accounts confirm through INVO's
+    emailed link.
+  - uGUI match-code prompt (`InvoEnrollmentPromptPanel`).
+  - Gamepad and keyboard navigation (`InvoGamepadFocus`), safe-area insets
+    (`InvoSafeArea`), phone-pad and number keyboards on mobile.
+- **API:** `GetPlayerDestinationsAsync`, `ChangePlayerPhoneAsync`,
+  `CreatePhoneChangeRequestAsync`, `GetPhoneChangeRequestAsync`, `ApplyConfirmedPhone`,
+  `PlayerPhoneChanged`, `BalanceChanged` / `LastBalance`, `Storefront`,
+  `InvoPhone.MaskShort`, `InvoSDKWindowController`, `InvoTabBar`.
+- Demo sample with `InvoCaptureDriver` (`-invoCapture <dir>` saves screenshots of every
+  screen), and 17 new EditMode tests (94 in total).
+
+### Changed
+
+- The player-token mint sends `player_phone` and `player_name`, as INVO's docs require, and
+  logs `phone_mismatch`.
+- The Collect screen has no claim-code form. INVO is retiring claim codes; receivers without
+  an account in the game collect through the link INVO emails them.
+  `ClaimCurrencyAsync` / `ClaimTransferAsync` remain for existing integrations.
+- SMS-era wording removed from the send and transfer panels.
+
+### Fixed
+
+- **No text rendered on Unity 2021.3 / 2022.3:** the Inter font asset had an empty material
+  reference, which only Unity 6's TextMeshPro could recover from. Regenerated in 2021.3.
+- `InvoDeviceApprovalPanelView` could not be saved in a scene or prefab (its class lived in a
+  file with another name), so every `approvalView` field read as missing after a reload.
+- The transfer panel never selected a destination when no dropdown was assigned.
+- `MainScene` had a real-looking phone number typed into its phone fields.
+
+### Removed
+
+- The unused NuGet restore folders under `Packages/` (Stripe.net, Newtonsoft.Json, System.*
+  shims, about 73 MB) and `packages.config`.
+
+---
+
 ## [3.0.0] — 2026-10-01
 
 Invo retired SMS verification. Sends and transfers are now approved on the player's
