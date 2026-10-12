@@ -27,12 +27,20 @@ namespace InvoSDK.UI.Core
             }
         }
 
+        /// <summary>Raised after <see cref="ShowPanel"/> with the panel's id (tab bars use it to highlight).</summary>
+        public event System.Action<string> PanelShown;
+
+        /// <summary>The id of the panel last shown, or null.</summary>
+        public string CurrentPanelId { get; private set; }
+
         public void ShowPanel(string id)
         {
+            if (panelLookup == null)
+                Awake();
             foreach (var kv in panelLookup)
                 kv.Value.SetActive(kv.Key == id);
-
-            //Debug.Log($"[InvoSDK] Showing panel: {id}");
+            CurrentPanelId = id;
+            PanelShown?.Invoke(id);
         }
 
         public void HideAll()

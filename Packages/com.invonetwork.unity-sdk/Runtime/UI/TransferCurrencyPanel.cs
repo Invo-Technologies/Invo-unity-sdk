@@ -96,6 +96,18 @@ namespace InvoSDK.UI
         public TMP_Text claimCodeText;
         public TMP_Text claimCodeExpiryText;
 
+        [Header("3.1 - Picker and own phone (all optional)")]
+        [Tooltip("Searchable destination picker. When set it is used instead of toGameDropdown.")]
+        public InvoGamePicker gamePicker;
+        [Tooltip("Opens gamePicker and shows the chosen game.")]
+        public Button chooseGameButton;
+        public TMP_Text selectedGameNameText;
+        public TMP_Text selectedGameDetailText;
+        public TMP_Text selectedGameInitialsText;
+        [Tooltip("The player's own phone, masked. A transfer moves the player's own balance, so with the " +
+                 "phone inputs left empty both ends use the active player's phone.")]
+        public TMP_Text ownPhoneText;
+
         [Header("Buttons")]
         public Button step1NextButton;
         public Button step2PrevButton;
@@ -149,17 +161,20 @@ namespace InvoSDK.UI
             if (amountInputField != null) amountInputField.onValueChanged.AddListener(_ => UpdateAmounts());
             if (senderPhoneInput != null) senderPhoneInput.onValueChanged.AddListener(_ => ValidateStep1());
             if (receiverPhoneInput != null) receiverPhoneInput.onValueChanged.AddListener(_ => ValidateStep1());
+
+            if (chooseGameButton != null) chooseGameButton.onClick.AddListener(() => { if (gamePicker != null) gamePicker.Open(); });
+            if (gamePicker != null) gamePicker.Picked += OnGamePicked;
         }
 
         // MainScene.unity ships with several of these unassigned ({fileID: 0}). Name them loudly so an
         // integrator gets a wiring message instead of a swallowed NullReferenceException.
         private void ValidateWiring()
         {
-            RequireField(senderPhoneInput, nameof(senderPhoneInput));
-            RequireField(receiverPhoneInput, nameof(receiverPhoneInput));
+            // The phone inputs are optional since 3.1: both ends default to the active player's phone.
             RequireField(verificationStatusText, nameof(verificationStatusText));
             RequireField(amountInputField, nameof(amountInputField));
-            RequireField(toGameDropdown, nameof(toGameDropdown));
+            if (gamePicker == null)
+                RequireField(toGameDropdown, nameof(toGameDropdown));
 
             if (claimCodeText == null)
                 Debug.LogWarning("[InvoSDK] TransferCurrencyPanel.claimCodeText is not assigned. " +
@@ -184,9 +199,18 @@ namespace InvoSDK.UI
             return false;
         }
 
-        private void OnEnable() => ResetPanel();
+        private void OnEnable()
+        {
+            APIManager.PlayerPhoneChanged += OnPlayerPhoneChanged;
+            ResetPanel();
+            RefreshOwnPhone();
+        }
 
-        private void OnDisable() => CancelPolling();
+        private void OnDisable()
+        {
+            APIManager.PlayerPhoneChanged -= OnPlayerPhoneChanged;
+            CancelPolling();
+        }
 
         private void OnDestroy() => CancelPolling();
 
@@ -291,23 +315,109 @@ namespace InvoSDK.UI
 
         private void PopulateGameDropdown()
         {
-            if (toGameDropdown == null) return;
-
             var filtered = GetDestinations();
-            toGameDropdown.ClearOptions();
-            toGameDropdown.AddOptions(filtered.ConvertAll(g => g.game_name));
-            toGameDropdown.onValueChanged.RemoveAllListeners();
-            toGameDropdown.onValueChanged.AddListener(OnToGameSelected);
+            if (toGameDropdown != null)
+            {
+                toGameDropdown.ClearOptions();
+                toGameDropdown.AddOptions(filtered.ConvertAll(g => g.game_name));
+                toGameDropdown.onValueChanged.RemoveAllListeners();
+                toGameDropdown.onValueChanged.AddListener(OnToGameSelected);
+            }
 
+            // 3.0 returned early without a dropdown, so no destination was ever selected.
             if (filtered.Count > 0)
             {
                 OnToGameSelected(0);
-                toGameDropdown.value = 0;
+                if (toGameDropdown != null) toGameDropdown.value = 0;
             }
             else
             {
                 selectedToGame = null;
             }
+
+            RefreshGamePicker(null);
+            if (gamePicker != null && filtered.Count > 0)
+                _ = MarkGamesThePlayerPlaysAsync();
+        }
+
+        private void RefreshGamePicker(Dictionary<string, PlayerDestination> played)
+        {
+            if (gamePicker != null)
+            {
+                var filtered = GetDestinations();
+                var options = new List<InvoGameOption>(filtered.Count);
+                for (int i = 0; i < filtered.Count; i++)
+                {
+                    TransferResponse.AvailableGame g = filtered[i];
+                    PlayerDestination mine = null;
+                    played?.TryGetValue(g.game_id ?? string.Empty, out mine);
+                    var parts = new List<string>();
+                    foreach (string part in new[] { g.genre, g.platform, g.currency_name })
+                        if (!string.IsNullOrWhiteSpace(part)) parts.Add(part.Trim());
+                    bool active = string.IsNullOrEmpty(g.game_status) ||
+                                  string.Equals(g.game_status, "active", StringComparison.OrdinalIgnoreCase);
+                    options.Add(new InvoGameOption
+                    {
+                        id = g.game_id,
+                        name = g.game_name,
+                        subtitle = string.Join(" · ", parts),
+                        detail = mine != null && !string.IsNullOrEmpty(mine.available_balance)
+                            ? $"{mine.available_balance} {mine.default_currency?.currency_name ?? g.currency_name}".Trim()
+                            : null,
+                        iconUrl = g.game_icon,
+                        isYours = mine != null,
+                        available = active,
+                        unavailableReason = active ? null : "Not accepting currency right now",
+                        index = i
+                    });
+                }
+                gamePicker.SetOptions(options, selectedToGame?.game_id);
+            }
+            RefreshSelectedGame();
+        }
+
+        private async Task MarkGamesThePlayerPlaysAsync()
+        {
+            PlayerDestinationsResponse resp;
+            try
+            {
+                resp = await APIManager.Instance.GetPlayerDestinationsAsync();
+            }
+            catch (InvoApiException)
+            {
+                return; // Optional enrichment: the picker still lists every game.
+            }
+            if (this == null || resp?.destinations == null)
+                return;
+            var played = new Dictionary<string, PlayerDestination>();
+            foreach (PlayerDestination d in resp.destinations)
+                if (d != null && !string.IsNullOrEmpty(d.game_id))
+                    played[d.game_id] = d;
+            RefreshGamePicker(played);
+        }
+
+        private void RefreshSelectedGame()
+        {
+            string name = selectedToGame != null ? selectedToGame.game_name : "Choose a game";
+            SetText(selectedGameNameText, name);
+            SetText(selectedGameInitialsText, InvoGameSearch.Initials(name));
+            SetText(selectedGameDetailText, selectedToGame != null ? $"You receive {selectedToGame.currency_name}" : string.Empty);
+        }
+
+        private void OnGamePicked(InvoGameOption option)
+        {
+            if (option == null) return;
+            OnToGameSelected(option.index);
+            if (toGameDropdown != null) toGameDropdown.SetValueWithoutNotify(option.index);
+            ValidateStep1();
+        }
+
+        private void OnPlayerPhoneChanged(string _) => RefreshOwnPhone();
+
+        private void RefreshOwnPhone()
+        {
+            string own = APIManager.Instance != null ? APIManager.Instance.GetPlayerPhone() : null;
+            SetText(ownPhoneText, string.IsNullOrEmpty(own) ? "Not set" : InvoPhone.MaskShort(own));
         }
 
         private void OnToGameSelected(int index)
@@ -322,6 +432,7 @@ namespace InvoSDK.UI
             _ = LoadSpriteFromUrl(selectedToGame.currency_symbol_url, toCurrencyIcon);
 
             UpdateAmounts();
+            RefreshSelectedGame();
         }
 
         // ---------------- STEP 1: VALIDATION ----------------
@@ -404,12 +515,19 @@ namespace InvoSDK.UI
             if (senderPhoneInput != null && !string.IsNullOrWhiteSpace(senderPhoneInput.text))
                 return senderPhoneInput.text;
 
-            // Scene fallback: senderPhoneInput is unassigned in MainScene.unity. The source phone
-            // belongs to the local player, so InvoSDKConfig.playerPhone is the correct stand-in.
+            // The source phone belongs to the local player: the active player's phone (SetActivePlayer),
+            // else the config's test player.
+            string active = APIManager.Instance != null ? APIManager.Instance.GetPlayerPhone() : null;
+            if (!string.IsNullOrWhiteSpace(active))
+                return active;
             return config != null ? config.playerPhone : null;
         }
 
-        private string ReadReceiverPhoneRaw() => receiverPhoneInput != null ? receiverPhoneInput.text : null;
+        /// <summary>A transfer moves the player's own balance: with no recipient field, the target is the player.</summary>
+        private string ReadReceiverPhoneRaw() =>
+            receiverPhoneInput != null && !string.IsNullOrWhiteSpace(receiverPhoneInput.text)
+                ? receiverPhoneInput.text
+                : ReadSenderPhoneRaw();
 
         /// <summary>
         /// Source = the local player (this matches source_player_name / source_player_email, which
@@ -467,7 +585,7 @@ namespace InvoSDK.UI
 
             SetText(serviceFeeText, $"-{InvoFormat.Amount(fee)}");
             SetText(receiverGetsText, InvoFormat.Amount(receiverGets));
-            SetText(feeEstimateNoticeText, "Estimated fee. Invo confirms the exact amount before you verify.");
+            SetText(feeEstimateNoticeText, "Estimated fee. INVO confirms the exact amount before you approve.");
 
             ValidateStep1();
         }
@@ -479,7 +597,7 @@ namespace InvoSDK.UI
             SetText(reviewAmountText, amountInputField != null ? amountInputField.text : string.Empty);
             SetText(reviewFeeText, $"{(serviceFeeText != null ? serviceFeeText.text : "-0.00")} (estimate)");
             SetText(reviewReceiverGetsText, $"{(receiverGetsText != null ? receiverGetsText.text : "0.00")} (estimate)");
-            SetText(feeEstimateNoticeText, "Estimated fee. Invo confirms the exact amount before you verify.");
+            SetText(feeEstimateNoticeText, "Estimated fee. INVO confirms the exact amount before you approve.");
         }
 
         /// <summary>Replaces the local estimate with the authoritative fees from the initiate response.</summary>
@@ -559,7 +677,7 @@ namespace InvoSDK.UI
                     _clientRequestId = APIManager.NewClientRequestId();
 
                 Debug.Log($"[InvoSDK] Initiating transfer to {selectedToGame.game_name} " +
-                          $"for {InvoPhone.Mask(targetPhone)}...");
+                          $"for {InvoPhone.MaskShort(targetPhone)}...");
 
                 var data = await api.InitiateTransferAsync(
                     _clientRequestId,

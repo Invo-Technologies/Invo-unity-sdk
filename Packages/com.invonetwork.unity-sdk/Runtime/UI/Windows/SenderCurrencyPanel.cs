@@ -138,6 +138,19 @@ namespace InvoSDK.UI
         public Button accountSelectionConfirmButton;
         public Button accountSelectionCancelButton;
 
+        [Header("3.1 - Picker, own phone and recent recipients (all optional)")]
+        [Tooltip("Searchable destination picker. When set it is used instead of toGameDropdown.")]
+        public InvoGamePicker gamePicker;
+        [Tooltip("Opens gamePicker and shows the chosen game.")]
+        public Button chooseGameButton;
+        public TMP_Text selectedGameNameText;
+        public TMP_Text selectedGameDetailText;
+        public TMP_Text selectedGameInitialsText;
+        [Tooltip("Numbers this player sent to before. Tapping one fills receiverPhoneInput.")]
+        public InvoRecentRecipients recentRecipients;
+        [Tooltip("The player's own phone, masked. Leave senderPhoneInput empty and the SDK uses the active player's phone.")]
+        public TMP_Text senderPhoneText;
+
         [Header("Shared")]
         public TMP_Text statusText;
         public GameObject busyIndicator;
@@ -153,6 +166,8 @@ namespace InvoSDK.UI
             public decimal? minimumTransfer;
             public decimal? maximumTransfer;
             public bool isSameGame;
+            public string iconUrl;
+            public string subtitle;
         }
 
         private readonly List<SendDestination> destinations = new();
@@ -202,11 +217,13 @@ namespace InvoSDK.UI
         private void OnEnable()
         {
             pollCts = new CancellationTokenSource();
+            APIManager.PlayerPhoneChanged += OnPlayerPhoneChanged;
             _ = RunGuarded(InitializeAsync);
         }
 
         private void OnDisable()
         {
+            APIManager.PlayerPhoneChanged -= OnPlayerPhoneChanged;
             CancelPolling();
         }
 
@@ -260,6 +277,10 @@ namespace InvoSDK.UI
                 accountSelectionConfirmButton.onClick.AddListener(OnAccountSelectionConfirmClicked);
             if (accountSelectionCancelButton != null)
                 accountSelectionCancelButton.onClick.AddListener(OnAccountSelectionCancelClicked);
+
+            if (chooseGameButton != null) chooseGameButton.onClick.AddListener(OnChooseGameClicked);
+            if (gamePicker != null) gamePicker.Picked += OnGamePicked;
+            if (recentRecipients != null) recentRecipients.Picked += OnRecentRecipientPicked;
         }
 
         private void UnbindListeners()
@@ -286,6 +307,9 @@ namespace InvoSDK.UI
             RemoveClick(collectPendingButton, OnCollectPendingClicked);
             RemoveClick(accountSelectionConfirmButton, OnAccountSelectionConfirmClicked);
             RemoveClick(accountSelectionCancelButton, OnAccountSelectionCancelClicked);
+            RemoveClick(chooseGameButton, OnChooseGameClicked);
+            if (gamePicker != null) gamePicker.Picked -= OnGamePicked;
+            if (recentRecipients != null) recentRecipients.Picked -= OnRecentRecipientPicked;
 
             if (toGameDropdown != null) toGameDropdown.onValueChanged.RemoveListener(OnDestinationChanged);
         }
@@ -308,6 +332,8 @@ namespace InvoSDK.UI
             SetActiveSafe(claimPanel, false);
             SetActiveSafe(accountSelectionPanel, false);
             ShowStep(1);
+            RefreshOwnPhone();
+            RefreshRecentRecipients();
             await LoadAvailableGames();
             UpdateAmounts();
         }
@@ -403,6 +429,8 @@ namespace InvoSDK.UI
                     gameName = $"{config.gameName} (a player in this game)",
                     currencyName = config.gameCurrencyName,
                     isSameGame = true,
+                    iconUrl = config.gameIconUrl,
+                    subtitle = "Another player in this game",
                     // The destinations endpoint does not describe the source game,
                     // so no client-side limits exist for a peer-to-peer send; the
                     // server still enforces the currency's min/max.
@@ -427,7 +455,9 @@ namespace InvoSDK.UI
                         : game.currency_name,
                     minimumTransfer = ParseLimit(game.minimum_transfer),
                     maximumTransfer = ParseLimit(game.maximum_transfer),
-                    isSameGame = false
+                    isSameGame = false,
+                    iconUrl = game.game_icon,
+                    subtitle = JoinNonEmpty(game.genre, game.platform, game.currency_name)
                 });
             }
 
@@ -443,6 +473,120 @@ namespace InvoSDK.UI
 
             selectedDestination = destinations.Count > 0 ? destinations[0] : null;
             OnDestinationSelected();
+            RefreshGamePicker(null);
+            if (gamePicker != null)
+                _ = MarkGamesThePlayerPlaysAsync();
+        }
+
+        // ------------------------------------------------------------------
+        // 3.1 picker, own phone and recent recipients
+
+        private void RefreshGamePicker(Dictionary<string, PlayerDestination> played)
+        {
+            if (gamePicker != null)
+            {
+                var options = new List<InvoGameOption>(destinations.Count);
+                for (int i = 0; i < destinations.Count; i++)
+                {
+                    SendDestination d = destinations[i];
+                    PlayerDestination mine = null;
+                    played?.TryGetValue(d.gameId ?? string.Empty, out mine);
+                    options.Add(new InvoGameOption
+                    {
+                        id = d.gameId,
+                        name = d.isSameGame ? config.gameName : d.gameName,
+                        subtitle = d.subtitle,
+                        detail = mine != null && !string.IsNullOrEmpty(mine.available_balance)
+                            ? $"{mine.available_balance} {mine.default_currency?.currency_name ?? d.currencyName}".Trim()
+                            : null,
+                        iconUrl = d.iconUrl,
+                        isYours = d.isSameGame || mine != null,
+                        index = i
+                    });
+                }
+                gamePicker.SetOptions(options, selectedDestination?.gameId);
+            }
+            RefreshSelectedGame();
+        }
+
+        private async Task MarkGamesThePlayerPlaysAsync()
+        {
+            PlayerDestinationsResponse resp;
+            try
+            {
+                resp = await APIManager.Instance.GetPlayerDestinationsAsync();
+            }
+            catch (InvoApiException)
+            {
+                return; // Optional enrichment: the picker still lists every game.
+            }
+            if (this == null || resp?.destinations == null)
+                return;
+            var played = new Dictionary<string, PlayerDestination>();
+            foreach (PlayerDestination d in resp.destinations)
+                if (d != null && !string.IsNullOrEmpty(d.game_id))
+                    played[d.game_id] = d;
+            RefreshGamePicker(played);
+        }
+
+        private void RefreshSelectedGame()
+        {
+            string name = selectedDestination == null ? "Choose a game"
+                : selectedDestination.isSameGame ? config.gameName : selectedDestination.gameName;
+            SetText(selectedGameNameText, name);
+            SetText(selectedGameInitialsText, InvoGameSearch.Initials(name));
+            SetText(selectedGameDetailText, selectedDestination == null ? string.Empty
+                : selectedDestination.isSameGame ? "Another player in this game"
+                : $"They receive {selectedDestination.currencyName}");
+        }
+
+        private void OnChooseGameClicked()
+        {
+            if (gamePicker != null) gamePicker.Open();
+        }
+
+        private void OnGamePicked(InvoGameOption option)
+        {
+            if (option == null) return;
+            OnDestinationChanged(option.index);
+            if (toGameDropdown != null) toGameDropdown.SetValueWithoutNotify(option.index);
+            RefreshSelectedGame();
+        }
+
+        private void OnRecentRecipientPicked(string phone)
+        {
+            if (receiverPhoneInput != null) receiverPhoneInput.text = phone;
+        }
+
+        private void OnPlayerPhoneChanged(string _) => RefreshOwnPhone();
+
+        private void RefreshOwnPhone()
+        {
+            string own = APIManager.Instance != null ? APIManager.Instance.GetPlayerPhone() : null;
+            SetText(senderPhoneText, string.IsNullOrEmpty(own) ? "Not set" : InvoPhone.MaskShort(own));
+            RefreshStep1Interactable();
+        }
+
+        private void RefreshRecentRecipients()
+        {
+            if (recentRecipients == null || APIManager.Instance == null) return;
+            recentRecipients.SetRecipients(InvoRecentRecipientsStore.Get(APIManager.Instance.GetPlayerEmail()));
+        }
+
+        /// <summary>The typed sender phone, else the active player's own phone.</summary>
+        private string SenderPhoneRaw()
+        {
+            if (senderPhoneInput != null && !string.IsNullOrWhiteSpace(senderPhoneInput.text))
+                return senderPhoneInput.text;
+            return APIManager.Instance != null ? APIManager.Instance.GetPlayerPhone() : null;
+        }
+
+        private static string JoinNonEmpty(params string[] parts)
+        {
+            var kept = new List<string>();
+            foreach (string part in parts)
+                if (!string.IsNullOrWhiteSpace(part)) kept.Add(part.Trim());
+            return string.Join(" · ", kept);
         }
 
         private static decimal? ParseLimit(string raw)
@@ -515,12 +659,14 @@ namespace InvoSDK.UI
         {
             bool ok = true;
 
-            string sender = InvoPhone.Normalize(senderPhoneInput != null ? senderPhoneInput.text : null);
+            string sender = InvoPhone.Normalize(SenderPhoneRaw());
             if (sender == null)
             {
                 ok = false;
                 if (showErrors)
-                    SetText(senderPhoneErrorText, InvoPhone.DescribeProblem(senderPhoneInput != null ? senderPhoneInput.text : null));
+                    SetText(senderPhoneErrorText, senderPhoneInput != null
+                        ? InvoPhone.DescribeProblem(SenderPhoneRaw())
+                        : "Your phone number is not set. Change it in your INVO settings.");
             }
             else if (showErrors) SetText(senderPhoneErrorText, string.Empty);
 
@@ -614,8 +760,8 @@ namespace InvoSDK.UI
 
             // Masked for display: the review screen is shown on a shared screen
             // often enough that the full number should not linger there.
-            SetText(reviewFromPhone, InvoPhone.Mask(normalizedSenderPhone));
-            SetText(reviewToPhone, InvoPhone.Mask(normalizedReceiverPhone));
+            SetText(reviewFromPhone, InvoPhone.MaskShort(normalizedSenderPhone));
+            SetText(reviewToPhone, InvoPhone.MaskShort(normalizedReceiverPhone));
             SetText(reviewFromGame, config.gameName);
             SetText(reviewToGame, selectedDestination?.gameName ?? "N/A");
             SetText(reviewSendAmount, $"{InvoFormat.Amount(enteredAmount)} {sourceCurrency}");
@@ -632,7 +778,7 @@ namespace InvoSDK.UI
             // Navigation is still allowed; OnConfirmSendAsync refuses to mint a
             // second reservation.
             if (!string.IsNullOrEmpty(currentTransactionId))
-                ShowError("This send is already reserved. Finish the verification step - " +
+                ShowError("This send is already reserved. Finish approving it on your phone - " +
                           "changes made here will not apply to it.");
             else
                 ClearStatus();
@@ -642,8 +788,8 @@ namespace InvoSDK.UI
         private void OnBackToStep2()
         {
             if (!string.IsNullOrEmpty(currentTransactionId))
-                ShowError("Your send is reserved and waiting for verification. " +
-                          "Confirming again will take you back to the code screen, not start a second send.");
+                ShowError("Your send is reserved and waiting for your phone's approval. " +
+                          "Continuing takes you back to the approval screen; it does not start a second send.");
             else
                 ClearStatus();
             ShowStep(2);
@@ -941,7 +1087,7 @@ namespace InvoSDK.UI
 
             SetText(confirmationTitle, "Sent");
             SetText(confirmationSubtitle,
-                $"{netText} {destCurrency} is waiting for {InvoPhone.Mask(normalizedReceiverPhone)} in " +
+                $"{netText} {destCurrency} is waiting for {InvoPhone.MaskShort(normalizedReceiverPhone)} in " +
                 $"{selectedDestination?.gameName ?? "the destination game"}. " + whereCollected);
 
             // A send's claim code goes to the RECEIVER, never back to the sender, so the
@@ -955,6 +1101,8 @@ namespace InvoSDK.UI
 
             ShowStep(4);
             APIManager.Instance.StartBalancePolling();
+            InvoRecentRecipientsStore.Remember(APIManager.Instance.GetPlayerEmail(), normalizedReceiverPhone);
+            RefreshRecentRecipients();
         }
 
         private void OnCopyClaimCodeClicked()
