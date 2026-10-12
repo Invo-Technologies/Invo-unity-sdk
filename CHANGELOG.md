@@ -60,6 +60,8 @@ Tested on Unity 2021.3.45f2, 2022.3.62f3 and 6000.0.58f2 (see the pull request's
   `InvoPhone.MaskShort`, `InvoSDKWindowController`, `InvoTabBar`.
 - Demo sample with `InvoCaptureDriver` (`-invoCapture <dir>` saves screenshots of every
   screen), and 17 new EditMode tests (94 in total).
+- Demo sample `InvoSandboxSmoke` (`-invoSmoke <file>`): balance, catalog, one item purchase
+  and a send and a transfer up to the QR approval against INVO's sandbox, never approved.
 
 ### Changed
 
@@ -83,6 +85,9 @@ Tested on Unity 2021.3.45f2, 2022.3.62f3 and 6000.0.58f2 (see the pull request's
 
 - The unused NuGet restore folders under `Packages/` (Stripe.net, Newtonsoft.Json, System.*
   shims, about 73 MB) and `packages.config`.
+- Third-party game art left in the 3.0 art folder (game icons, key art, a character
+  render and mock-up slides that embedded them). The Demo catalog items have plain
+  placeholder icons.
 
 ---
 
