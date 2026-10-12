@@ -255,6 +255,7 @@ namespace InvoSDK.Harness
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920, 1080);
             scaler.matchWidthOrHeight = 0.5f;
+            root.AddComponent<InvoAdaptiveScaler>();
             root.AddComponent<InvoThemeProvider>().theme = null; // null = InvoDefaultTheme
 
             RectTransform content = Node(root.transform, "Content");

@@ -28,6 +28,19 @@ namespace InvoSDK.Harness
 
         public static void WebGL() => Build(BuildTarget.WebGL, BuildTargetGroup.WebGL, "");
 
+        public static void Android()
+        {
+            PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Android, "network.invo.sdkdemo");
+            Build(BuildTarget.Android, BuildTargetGroup.Android, "InvoDemo.apk");
+        }
+
+        /// <summary>Exports the Xcode project; compiling it needs a Mac.</summary>
+        public static void iOS()
+        {
+            PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.iOS, "network.invo.sdkdemo");
+            Build(BuildTarget.iOS, BuildTargetGroup.iOS, "");
+        }
+
         private static void Build(BuildTarget target, BuildTargetGroup group, string exe)
         {
             string outDir = Arg("-invoOut");
@@ -36,9 +49,12 @@ namespace InvoSDK.Harness
             if (target == BuildTarget.StandaloneWindows64)
                 PlayerSettings.SetScriptingBackend(group, ScriptingImplementation.Mono2x);
             PlayerSettings.runInBackground = true;
-            PlayerSettings.defaultScreenWidth = 1280;
-            PlayerSettings.defaultScreenHeight = 720;
-            PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
+            if (target == BuildTarget.StandaloneWindows64)
+            {
+                PlayerSettings.defaultScreenWidth = 1280;
+                PlayerSettings.defaultScreenHeight = 720;
+                PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
+            }
 
             var options = new BuildPlayerOptions
             {
