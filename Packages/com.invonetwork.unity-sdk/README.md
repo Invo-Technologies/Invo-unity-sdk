@@ -16,10 +16,10 @@ The full guide (API reference, error handling, server-side proxy, security) is t
 **+ > Add package from git URL** and enter:
 
 ```
-https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.0
+https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.1
 ```
 
-**.unitypackage.** Import `InvoSDK-3.1.0.unitypackage` from the GitHub release.
+**.unitypackage.** Import `InvoSDK-3.1.1.unitypackage` from the GitHub release.
 
 Dependencies are added automatically: `com.unity.nuget.newtonsoft-json` and `com.unity.ugui`.
 
@@ -34,9 +34,9 @@ package, either for Both.
 
 ## Set up
 
-1. **InvoSDK > Settings.**
+1. **Tools > Invo SDK > Settings.**
    - **Sandbox tab:** your sandbox Game ID and one sandbox key per storefront you sell on.
-     Sandbox and development builds may carry these keys.
+     Only Play Mode and Development builds use these keys; every other build is stripped of them.
    - **Production tab:** your production Game ID, your Game Server URL and your checkout endpoint.
      There are no key fields: INVO's docs say a key must never go into a Unity build. Your server
      holds one production key per storefront and receives the storefront in `X-Invo-Storefront`.
@@ -88,7 +88,7 @@ Or import the **Demo** sample (**Package Manager > Invo SDK > Samples**).
 2. Delete the rest of the old SDK: `Assets/APIManager.cs`, `Assets/InvoSDK/Scripts`,
    `Assets/InvoSDK/Tests`, `Assets/InvoSDK/Prefabs`, `Assets/InvoSDK/Inter`,
    `Assets/InvoSDK/NewArt`, `Assets/InvoSDK/Sprites` and `Assets/Plugins/iOS/InvoHostedApproval.mm`.
-3. Install the package, then open **InvoSDK > Settings** and press
+3. Install the package, then open **Tools > Invo SDK > Settings** and press
    **Move the 3.0 key and Game ID into Sandbox**.
 
 Every file kept its GUID, so your scenes and prefabs keep their references, and `APIManager`

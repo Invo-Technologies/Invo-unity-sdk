@@ -77,7 +77,7 @@ namespace InvoSDK.UI
             {
                 if (this == null) return;
                 SetText(statusText, ex.ErrorCode == APIManager.GameServerRequiredCode
-                    ? "Collecting needs the game server. Check InvoSDK > Settings."
+                    ? "Collecting needs the game server. Check Tools > Invo SDK > Settings."
                     : "We could not check for currency sent to you. Try again in a moment.");
                 return;
             }

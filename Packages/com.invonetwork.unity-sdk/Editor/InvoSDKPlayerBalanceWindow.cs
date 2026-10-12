@@ -20,7 +20,7 @@ namespace InvoSDK.Editor
         private MessageType resultType = MessageType.Info;
         private Vector2 resultScroll;
 
-        [MenuItem("InvoSDK/Check Player Balance", priority = 11)]
+        [MenuItem("Tools/Invo SDK/Check Player Balance", priority = 11)]
         public static void ShowWindow()
         {
             var window = GetWindow<InvoSDKPlayerBalanceWindow>("InvoSDK - Player Balance");
@@ -77,7 +77,7 @@ namespace InvoSDK.Editor
 
             if (string.IsNullOrEmpty(sdkKey))
             {
-                SetResult("Not configured", "SDK Key not set. Configure it in InvoSDK > Setup Wizard.", MessageType.Error);
+                SetResult("Not configured", "SDK Key not set. Configure it in Tools > Invo SDK > Setup Wizard.", MessageType.Error);
                 return;
             }
 

@@ -10,7 +10,7 @@ namespace InvoSDK.Editor
         private Vector2 scrollPos;
         private int selectedIndex = -1;
 
-        [MenuItem("InvoSDK/Item Catalog", priority = 1)]
+        [MenuItem("Tools/Invo SDK/Item Catalog", priority = 1)]
         public static void ShowWindow()
         {
             var window = GetWindow<InvoSDKItemCatalogWindow>("InvoSDK Item Catalog");

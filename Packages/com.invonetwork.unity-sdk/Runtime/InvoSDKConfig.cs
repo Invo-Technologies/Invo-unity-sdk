@@ -34,7 +34,7 @@ namespace InvoSDK
     public class InvoStorefrontKey
     {
         public InvoStorefront storefront;
-        [Tooltip("SANDBOX key (ivsdk_...) for this storefront. Sandbox builds may carry it; production builds never do.")]
+        [Tooltip("SANDBOX key (ivsdk_...) for this storefront. Used in Play Mode and Development builds only; release and production builds never carry it.")]
         public string sdkKey;
     }
 
@@ -49,7 +49,7 @@ namespace InvoSDK
     public class InvoSDKConfig : ScriptableObject
     {
         // ------------------------------------------------------------------ 3.1 settings
-        // Edited in InvoSDK > Settings. Sandbox and production are separate INVO environments with
+        // Edited in Tools > Invo SDK > Settings. Sandbox and production are separate INVO environments with
         // separate Game IDs and separate keys. Only the sandbox side holds keys: INVO's docs say a key
         // must never ship in a production build, so production calls go through gameServerUrl.
 
@@ -72,9 +72,9 @@ namespace InvoSDK
 
         // ------------------------------------------------------------------ fields kept from 3.0
 
-        [Header("Legacy credentials (3.0) — migrated by InvoSDK > Settings")]
+        [Header("Legacy credentials (3.0) — migrated by Tools > Invo SDK > Settings")]
         [Tooltip("3.0 single sandbox key. Still honoured when no per-storefront key is set. " +
-                 "Anything stored here is compiled into sandbox builds; never put a production key here.")]
+                 "Used in Play Mode and Development builds only; never put a production key here.")]
         public string sdkKey;
 
         [Tooltip("3.0 single Game ID. Used when sandboxGameId / productionGameId is empty.")]
@@ -132,10 +132,12 @@ namespace InvoSDK
         public InvoStorefront ActiveStorefront => ResolveStorefront(InvoStorefrontResolver.CurrentPlatform);
 
         /// <summary>
-        /// The sandbox key for this build's storefront. Empty in production, always: production builds
-        /// call through <see cref="gameServerUrl"/>. Falls back to the 3.0 <see cref="sdkKey"/>.
+        /// The sandbox key for this build's storefront, in the Editor and Development builds only.
+        /// Empty in production and in release (non-Development) players, always: those call through
+        /// <see cref="gameServerUrl"/>, and the build guard strips the keys from them as well.
+        /// Falls back to the 3.0 <see cref="sdkKey"/>.
         /// </summary>
-        public string ActiveSandboxKey => useProduction ? string.Empty : SandboxKeyFor(ActiveStorefront);
+        public string ActiveSandboxKey => useProduction || !Debug.isDebugBuild ? string.Empty : SandboxKeyFor(ActiveStorefront);
 
         public InvoStorefront ResolveStorefront(InvoBuildPlatform platform)
         {

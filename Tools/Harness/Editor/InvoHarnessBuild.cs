@@ -1,7 +1,7 @@
 // Harness-only. Builds the demo scene for the test matrix.
 // Built and run on Unity 2021.3; the APIs it uses are only obsolete on newer versions.
 #pragma warning disable CS0618
-// Usage: Unity -batchmode -projectPath <harness> -executeMethod InvoSDK.Harness.InvoHarnessBuild.Windows -invoOut <dir> -quit
+// Usage: Unity -batchmode -projectPath <harness> -executeMethod InvoSDK.Harness.InvoHarnessBuild.Windows -invoOut <dir> [-invoDevelopment] -quit
 using System;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
@@ -78,7 +78,7 @@ namespace InvoSDK.Harness
                 target = target,
                 targetGroup = group,
                 locationPathName = string.IsNullOrEmpty(exe) ? outDir : System.IO.Path.Combine(outDir, exe),
-                options = BuildOptions.None
+                options = Array.IndexOf(Environment.GetCommandLineArgs(), "-invoDevelopment") >= 0 ? BuildOptions.Development : BuildOptions.None
             };
             BuildReport report = BuildPipeline.BuildPlayer(options);
             Debug.Log($"[InvoHarnessBuild] {target}: {report.summary.result}, {report.summary.totalErrors} error(s), " +

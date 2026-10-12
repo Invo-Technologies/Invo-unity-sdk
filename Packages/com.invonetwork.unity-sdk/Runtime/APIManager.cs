@@ -972,7 +972,7 @@ namespace InvoSDK
                     useProduction
                         ? "This call needs the game secret, which must never ship in a production build. " +
                           "Set InvoSDKConfig.gameServerUrl to your server (README, 'Server-side proxy')."
-                        : "No route for a game-secret call: add a sandbox key in InvoSDK > Settings, or set gameServerUrl.",
+                        : "No route for a game-secret call: add a sandbox key in Tools > Invo SDK > Settings (Play Mode and Development builds only), or set gameServerUrl.",
                     0, GameServerRequiredCode, null, null, null);
                 onError?.Invoke(refused);
                 throw refused;

@@ -46,7 +46,7 @@ Linux, Android, iOS, WebGL and consoles.
 
 Sandbox and production are **fully isolated databases with independent SDK keys**. A sandbox key does not work against production, and vice versa.
 
-Each environment has its own Game ID and its own keys. Pick the environment in **InvoSDK > Settings**
+Each environment has its own Game ID and its own keys. Pick the environment in **Tools > Invo SDK > Settings**
 ("Play Mode and builds use"), which sets `useProduction` on the config asset.
 
 > **Two credentials, never mixed.**
@@ -66,9 +66,9 @@ On 2021.3 and 2022.3 TextMeshPro is the separate `com.unity.textmeshpro` package
 add it when it is missing.
 
 1. **Window > Package Manager > + > Add package from git URL**:
-   `https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.0`
-   (or import `InvoSDK-3.1.0.unitypackage` from the release).
-2. **InvoSDK > Settings** (see [Configuration](#configuration)).
+   `https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.1`
+   (or import `InvoSDK-3.1.1.unitypackage` from the release).
+2. **Tools > Invo SDK > Settings** (see [Configuration](#configuration)).
 3. Drag `InvoAPI.prefab` and `InvoSDKWindow.prefab` (package `Runtime/Prefabs`) into your first scene,
    with an EventSystem whose input module matches your project's input handling.
 
@@ -83,7 +83,7 @@ The Settings window detects this and offers to select the stray asset.
 
 ## Configuration
 
-**InvoSDK > Settings** has three tabs.
+**Tools > Invo SDK > Settings** has three tabs.
 
 | Tab | Fields |
 |---|---|
@@ -103,13 +103,14 @@ The Settings window detects this and offers to select the stray asset.
 - `playerEmail`, `playerName`, `playerPhone` are the test player. In a real game call
   `APIManager.Instance.SetActivePlayer(email, name, phone)` from your login.
 
-> ### A sandbox key ships in sandbox builds
+> ### Sandbox keys go into Development builds only
 >
 > Unity bundles everything under a `Resources/` folder into the player. Anyone can recover a key from
 > `resources.assets` in about a minute. An extracted key is a **full tenant credential**: it can charge
 > cards, move any player's balance, request a payout, mint player tokens and reconfigure webhooks.
-> Sandbox and production keys look identical. That is why only the Sandbox tab takes keys, and why
-> production builds are stripped of them.
+> Sandbox and production keys look identical. That is why only the Sandbox tab takes keys, why the
+> build guard strips them from every production and release build, and why release players ignore
+> them. Don't distribute Development builds.
 
 **If a key leaks, rotate it with `immediate: true`.** The default rotation keeps the old key working for a 7-day grace window, and that grace is not honored uniformly across endpoints — some accept the previous key during the window while others reject it at once. For a leaked key, take the hard cutover.
 
@@ -322,7 +323,7 @@ clear of notches and overscan; phone fields open the phone pad.
 1. Keep `Assets/InvoSDK/Resources`. Delete the rest of the copied SDK (`Assets/APIManager.cs`,
    `Assets/InvoSDK/Scripts`, `Tests`, `Prefabs`, `Inter`, `NewArt`, `Sprites`, and
    `Assets/Plugins/iOS/InvoHostedApproval.mm`), then install the package. Every file kept its GUID.
-2. **InvoSDK > Settings > Move the 3.0 key and Game ID into Sandbox**, then fill in the Production tab.
+2. **Tools > Invo SDK > Settings > Move the 3.0 key and Game ID into Sandbox**, then fill in the Production tab.
 3. Replace your SDK UI with `InvoSDKWindow.prefab`, or keep your own: the 3.0 panel components and
    their fields are unchanged, and the 3.1 additions (`gamePicker`, `recentRecipients`,
    `senderPhoneText`, `ownPhoneText`, ...) are optional.
@@ -405,7 +406,7 @@ string token = await APIManager.Instance.GetPlayerTokenAsync();
 ---
 ## Editor tools
 
-`InvoSDK →` **Settings** (also **Setup Wizard**), **Item Catalog**, **Test Purchase**, **Player Balance**.
+`Tools → Invo SDK →` **Settings** (also **Setup Wizard**), **Item Catalog**, **Test Purchase**, **Player Balance**.
 
 These are Editor-only and never ship in a player build. They use the sandbox key for the desktop storefront.
 
@@ -445,7 +446,7 @@ Your server needs two jobs:
 
 **Status: the plugin calls an endpoint you configure. You must host it.**
 
-Set `checkoutSessionEndpoint` to an **https** URL on your server — once in **InvoSDK → Settings › Production**, which writes it to `InvoSDKConfig`. An individual `InvoSDKFeaturedPanel` can override it with its own Inspector field; blank means "use the config value". The plugin POSTs `{player_email, usd_amount}` and expects `{"checkout_url": "..."}`.
+Set `checkoutSessionEndpoint` to an **https** URL on your server — once in **Tools → Invo SDK → Settings › Production**, which writes it to `InvoSDKConfig`. An individual `InvoSDKFeaturedPanel` can override it with its own Inspector field; blank means "use the config value". The plugin POSTs `{player_email, usd_amount}` and expects `{"checkout_url": "..."}`.
 
 Your endpoint calls:
 
@@ -575,7 +576,7 @@ Hosted checkout is separate: it keeps its own `checkoutSessionEndpoint` (§2).
 
 | Symptom | Cause |
 |---|---|
-| `Config not found! Please run Setup Wizard.` | No `InvoSDKConfig.asset` under a `Resources` folder. It is gitignored: open **InvoSDK > Settings** to create yours. |
+| `Config not found! Please run Setup Wizard.` | No `InvoSDKConfig.asset` under a `Resources` folder. It is gitignored: open **Tools > Invo SDK > Settings** to create yours. |
 | `400 "Invalid price format"` | A locale emitted a comma decimal. Use `InvoFormat.Amount(...)`. |
 | `400 "Phone number must start with country code"` | Missing `+`. Use `InvoPhone.Normalize(...)`. |
 | `SDK_GAME_SERVER_REQUIRED` | Production build with no `gameServerUrl`. See [Server-side proxy](#server-side-proxy). |
