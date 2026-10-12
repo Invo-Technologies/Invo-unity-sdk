@@ -1,4 +1,6 @@
 // Harness-only. Run in Unity 2021.3 so every asset it saves upgrades forward cleanly to 2022.3 and 6.
+// Built and run on Unity 2021.3; the APIs it uses are only obsolete on newer versions.
+#pragma warning disable CS0618
 //
 // Builds the Invo SDK 3.1 UI from code, themed through InvoTheme / InvoThemed, and saves:
 //   Runtime/Resources/InvoDefaultTheme.asset, Runtime/Resources/InvoLightTheme.asset
@@ -1018,7 +1020,8 @@ namespace InvoSDK.Harness
         private static InvoGameEntryView GameTile(RectTransform parent)
         {
             Image tile = Box(parent, "TileTemplate", InvoThemeRole.Field, InvoThemeShape.Rounded);
-            VStack(tile.rectTransform, 6, 8, 12, 8, 10, TextAnchor.UpperCenter);
+            // Children keep their own width so the avatar stays square.
+            VStack(tile.rectTransform, 6, 8, 12, 8, 10, TextAnchor.UpperCenter).childForceExpandWidth = false;
             var view = tile.gameObject.AddComponent<InvoGameEntryView>();
             view.button = tile.gameObject.AddComponent<Button>();
             view.button.targetGraphic = tile;

@@ -1,4 +1,6 @@
 // Harness-only. Builds the demo scene for the test matrix.
+// Built and run on Unity 2021.3; the APIs it uses are only obsolete on newer versions.
+#pragma warning disable CS0618
 // Usage: Unity -batchmode -projectPath <harness> -executeMethod InvoSDK.Harness.InvoHarnessBuild.Windows -invoOut <dir> -quit
 using System;
 using UnityEditor;
@@ -39,6 +41,20 @@ namespace InvoSDK.Harness
         {
             PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.iOS, "network.invo.sdkdemo");
             Build(BuildTarget.iOS, BuildTargetGroup.iOS, "");
+        }
+
+        /// <summary>
+        /// Exports the package (everything under Packages/com.invonetwork.unity-sdk except Samples~,
+        /// which Unity does not import) to the .unitypackage named by -invoOut.
+        /// </summary>
+        public static void ExportUnityPackage()
+        {
+            string outFile = Arg("-invoOut");
+            if (string.IsNullOrEmpty(outFile))
+                throw new ArgumentException("-invoOut <file.unitypackage> is required");
+            AssetDatabase.ExportPackage("Packages/com.invonetwork.unity-sdk", outFile,
+                ExportPackageOptions.Recurse);
+            Debug.Log($"[InvoHarnessBuild] exported {outFile} ({new System.IO.FileInfo(outFile).Length / 1024} KB)");
         }
 
         private static void Build(BuildTarget target, BuildTargetGroup group, string exe)
