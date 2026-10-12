@@ -232,7 +232,7 @@ namespace InvoSDK.UI
                 case "PENDING_TRANSFERS_TO_NEW_PHONE": return "Currency is waiting to be collected on that number. Collect it first.";
                 case "PHONE_UPDATE_UNAVAILABLE": return "Changing numbers is unavailable right now. Try again later.";
                 case "player_not_found": return "Make a send or transfer first; then you can change your number.";
-                case APIManager.GameServerRequiredCode: return "Changing your number needs the game server. Check InvoSDK > Settings.";
+                case APIManager.GameServerRequiredCode: return "Changing your number needs the game server. Check Tools > Invo SDK > Settings.";
             }
             return "We could not change your number. Try again in a moment.";
         }

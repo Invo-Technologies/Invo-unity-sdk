@@ -36,7 +36,7 @@ namespace InvoSDK.Editor
             "pm_card_discover"
         };
 
-        [MenuItem("InvoSDK/Test Purchase", priority = 1)]
+        [MenuItem("Tools/Invo SDK/Test Purchase", priority = 1)]
         public static void ShowWindow()
         {
             var window = GetWindow<InvoSDKTestPurchaseWindow>("InvoSDK Test Purchase");
@@ -118,7 +118,7 @@ namespace InvoSDK.Editor
 
             if (string.IsNullOrEmpty(sdkKey))
             {
-                SetResult("Not configured", "SDK Key not set. Configure it in InvoSDK > Setup Wizard.", MessageType.Error);
+                SetResult("Not configured", "SDK Key not set. Configure it in Tools > Invo SDK > Setup Wizard.", MessageType.Error);
                 return;
             }
 

@@ -9,7 +9,7 @@ using UnityEngine.Networking;
 namespace InvoSDK.Editor
 {
     /// <summary>
-    /// InvoSDK > Settings. Sandbox and Production are separate INVO environments with separate Game IDs
+    /// Tools > Invo SDK > Settings. Sandbox and Production are separate INVO environments with separate Game IDs
     /// and separate keys, so each has its own tab. Only the Sandbox tab holds keys: INVO's docs say a
     /// key must never ship in a Unity build, so production calls go through your game server, which
     /// holds one production key per storefront. <see cref="InvoBuildGuard"/> enforces that at build time.
@@ -46,8 +46,8 @@ namespace InvoSDK.Editor
         private UnityWebRequest pendingTest;
         private string pendingTestKey;
 
-        [MenuItem("InvoSDK/Settings", priority = 0)]
-        [MenuItem("InvoSDK/Setup Wizard", priority = 1)]
+        [MenuItem("Tools/Invo SDK/Settings", priority = 0)]
+        [MenuItem("Tools/Invo SDK/Setup Wizard", priority = 1)]
         public static void ShowWindow()
         {
             var window = GetWindow<InvoSDKSetupWizard>("Invo SDK Settings");

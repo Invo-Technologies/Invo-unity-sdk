@@ -47,7 +47,7 @@ It is a client. A production launch also needs a small server of your own that h
 - **UPM package.** Install from a git URL or a `.unitypackage`. The SDK lives in `Packages/com.invonetwork.unity-sdk`; nothing is copied into `Assets/`.
 - **Unity 2021.3 LTS and newer.** Tested on 2021.3, 2022.3 and Unity 6. 3.0 required Unity 6.
 - **New UI.** New prefabs for Store (Top up and Items), Send, Transfer, Collect and Phone, a live balance label, a game picker with search, recent recipients, and a single `InvoTheme` asset that restyles every panel without editing prefabs.
-- **Settings window** (`InvoSDK > Settings`) with separate Sandbox and Production tabs, one sandbox key per storefront, and Test connection buttons.
+- **Settings window** (`Tools > Invo SDK > Settings`) with separate Sandbox and Production tabs, one sandbox key per storefront, and Test connection buttons.
 - **Storefronts.** The SDK knows which store a build is for (Steam, Google Play, App Store, PlayStation, Xbox, Nintendo Switch, Epic, Web, Platform) and tells your game server through the `X-Invo-Storefront` header.
 - **Build guard.** Sandbox keys only go into Development builds. A production build fails without a production Game ID and an https Game Server URL, and no production or release build ever contains a sandbox key or the test player.
 - **Phone change.** Players can change their phone number. Secured accounts confirm through a link INVO emails them.
@@ -130,7 +130,7 @@ https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invon
 
 On Unity 2021.3 or 2022.3, accept the dialog that offers to add TextMeshPro if it appears.
 
-**3. Configure.** Open **InvoSDK > Settings**. On the **Sandbox** tab, enter the sandbox Game ID and paste each storefront's sandbox key. Click **Test connection**. Add a test player (email, phone in `+` international format, name).
+**3. Configure.** Open **Tools > Invo SDK > Settings**. On the **Sandbox** tab, enter the sandbox Game ID and paste each storefront's sandbox key. Click **Test connection**. Add a test player (email, phone in `+` international format, name).
 
 **4. Add the prefabs.** Drag these into your first scene:
 
@@ -250,7 +250,7 @@ The Demo sample uses `StandaloneInputModule`. With "Input System Package (New)" 
 1. Back up your project. **Keep `Assets/InvoSDK/Resources`**: it holds your config, item catalog and window config.
 2. Delete the rest of the old SDK: `Assets/APIManager.cs`, `Assets/InvoSDK/Scripts`, `Assets/InvoSDK/Tests`, `Assets/InvoSDK/Prefabs`, `Assets/InvoSDK/Inter`, `Assets/InvoSDK/NewArt`, `Assets/InvoSDK/Sprites` and `Assets/Plugins/iOS/InvoHostedApproval.mm`.
 3. Install the package as above.
-4. Open **InvoSDK > Settings**. If your config came from 3.0, the Sandbox tab shows **Move the 3.0 key and Game ID into Sandbox**. Click it. Until you do, the 3.0 `sdkKey` and `gameId` are still honoured.
+4. Open **Tools > Invo SDK > Settings**. If your config came from 3.0, the Sandbox tab shows **Move the 3.0 key and Game ID into Sandbox**. Click it. Until you do, the 3.0 `sdkKey` and `gameId` are still honoured.
 5. Enter your **production** Game ID on the Production tab. Sandbox and production are separate INVO titles with separate IDs.
 
 If you built your own layouts around the 3.0 `SenderCurrencyPanel` and `TransferCurrencyPanel`, the wiring checklist in [InvoSDK-README.md > Updating your UI for 3.0.0](InvoSDK-README.md#updating-your-ui-for-300) still applies to them. The new 3.1 prefabs are already wired.
@@ -259,7 +259,7 @@ If you built your own layouts around the 3.0 `SenderCurrencyPanel` and `Transfer
 
 ## Configuration
 
-All settings live in one asset, `Assets/InvoSDK/Resources/InvoSDKConfig.asset`, edited in **InvoSDK > Settings** (also **InvoSDK > Setup Wizard**). The window creates the asset if it is missing. It is **gitignored**: each developer configures their own, and it will not arrive with a clone.
+All settings live in one asset, `Assets/InvoSDK/Resources/InvoSDKConfig.asset`, edited in **Tools > Invo SDK > Settings** (also **Tools > Invo SDK > Setup Wizard**). The window creates the asset if it is missing. It is **gitignored**: each developer configures their own, and it will not arrive with a clone.
 
 The toolbar at the top of the window chooses what **Play Mode and builds use**: Sandbox or Production. That sets `useProduction`.
 
@@ -458,7 +458,7 @@ Two themes ship in `Runtime/Resources/`: `InvoDefaultTheme` (dark, the default) 
 
 To make your own:
 
-1. Duplicate `InvoDefaultTheme` (or create one with **Create > InvoSDK > Theme**) into your `Assets/` folder.
+1. Duplicate `InvoDefaultTheme` (or create one with **Create > Tools > Invo SDK > Theme**) into your `Assets/` folder.
 2. Change the values.
 3. Assign it to **Theme** on the `InvoThemeProvider` on the `InvoSDKWindow` root.
 
@@ -718,7 +718,7 @@ Returns real-money `GameItem`s for hosted checkout. Notes:
 
 - It returns **all active items across all games**, not just yours. Filter on `game_id`.
 - `discount_percentage` is a nullable **int** (0 to 100). `metadata` is arbitrary JSON; values are not all strings.
-- The Store's Top up page shows these packs. The Items page's in-game-currency items come from a **local** `InvoSDKItemCatalog` asset (`Resources/InvoSDKItemCatalog`, edited in **InvoSDK > Item Catalog**), not from this call. The two do not interoperate and no mapper is provided: their prices are in different units, so a naive mapper would misprice silently. `InvoSDKItem.priceUSD` is misnamed; it holds a game-currency amount.
+- The Store's Top up page shows these packs. The Items page's in-game-currency items come from a **local** `InvoSDKItemCatalog` asset (`Resources/InvoSDKItemCatalog`, edited in **Tools > Invo SDK > Item Catalog**), not from this call. The two do not interoperate and no mapper is provided: their prices are in different units, so a naive mapper would misprice silently. `InvoSDKItem.priceUSD` is misnamed; it holds a game-currency amount.
 
 ### Item purchase
 
@@ -1259,10 +1259,10 @@ Custom Tabs are optional: add `implementation 'androidx.browser:browser:1.8.0'` 
 
 | Menu | Window |
 |---|---|
-| **InvoSDK > Settings** (also **Setup Wizard**) | Sandbox, Production and Game & display tabs; Test connection; stray-config detection. Opens on first import. |
-| **InvoSDK > Item Catalog** | Edit the local `InvoSDKItemCatalog`: items, prices, rarities, sprites. |
-| **InvoSDK > Test Purchase** | Make a purchase against the configured environment. |
-| **InvoSDK > Check Player Balance** | Look up a balance without entering Play Mode. |
+| **Tools > Invo SDK > Settings** (also **Setup Wizard**) | Sandbox, Production and Game & display tabs; Test connection; stray-config detection. Opens on first import. |
+| **Tools > Invo SDK > Item Catalog** | Edit the local `InvoSDKItemCatalog`: items, prices, rarities, sprites. |
+| **Tools > Invo SDK > Test Purchase** | Make a purchase against the configured environment. |
+| **Tools > Invo SDK > Check Player Balance** | Look up a balance without entering Play Mode. |
 
 These are editor-only and never ship in a build, so they use the sandbox key directly.
 
@@ -1274,12 +1274,12 @@ Test Purchase handles `200` with `status: "requires_action"`: 3-D Secure is requ
 
 | Symptom | Cause / fix |
 |---|---|
-| `Config not found! Please run Setup Wizard.` | No `InvoSDKConfig.asset` under `Resources`. It is gitignored. Open **InvoSDK > Settings** to create yours. |
+| `Config not found! Please run Setup Wizard.` | No `InvoSDKConfig.asset` under `Resources`. It is gitignored. Open **Tools > Invo SDK > Settings** to create yours. |
 | Config changes have no effect | A second `InvoSDKConfig.asset` under another `Resources` folder. Delete the stray; the Settings window points at it. |
 | `APIManager.Instance` is null | `InvoAPI.prefab` (or an `APIManager`) is not in the scene. |
 | Buttons do not respond | No EventSystem, or the wrong input module. See [Input](#input-eventsystem). |
 | No text renders on 2021.3 / 2022.3 | TextMeshPro is missing, or TMP Essential Resources were not imported. See [TextMeshPro](#textmeshpro-on-20213-and-20223). |
-| Production build fails with "Production build stopped" | The build guard. Fix each listed item on **InvoSDK > Settings > Production**. |
+| Production build fails with "Production build stopped" | The build guard. Fix each listed item on **Tools > Invo SDK > Settings > Production**. |
 | `SDK_GAME_SERVER_REQUIRED` | Production with no Game Server URL, or sandbox with no key for this storefront and no server. |
 | `401` on every call (sandbox) | Missing or wrong sandbox key for this build's storefront, or a production key against sandbox. Use the **Test** button next to the key. |
 | `401` / `404` through your server | Your server is missing that storefront's key, or does not forward `/api/*`. Check its handling of `X-Invo-Storefront`. |

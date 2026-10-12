@@ -48,13 +48,13 @@ namespace InvoSDK.Editor
                 List<string> problems = ProductionProblems(config);
                 if (problems.Count > 0)
                     throw new BuildFailedException("[InvoSDK] Production build stopped:\n- " + string.Join("\n- ", problems) +
-                                                   "\nFix it in InvoSDK > Settings > Production.");
+                                                   "\nFix it in Tools > Invo SDK > Settings > Production.");
             }
             else if (string.IsNullOrWhiteSpace(config.gameServerUrl))
             {
                 Debug.LogWarning("[InvoSDK] Sandbox keys only go into Development builds, and this build is not one. " +
                                  "INVO calls that need a key will fail in it. Tick Development Build to test against the " +
-                                 "sandbox, or set a Game Server URL in InvoSDK > Settings.");
+                                 "sandbox, or set a Game Server URL in Tools > Invo SDK > Settings.");
             }
 
             var backup = new Backup

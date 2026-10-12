@@ -34,7 +34,7 @@ package, either for Both.
 
 ## Set up
 
-1. **InvoSDK > Settings.**
+1. **Tools > Invo SDK > Settings.**
    - **Sandbox tab:** your sandbox Game ID and one sandbox key per storefront you sell on.
      Only Play Mode and Development builds use these keys; every other build is stripped of them.
    - **Production tab:** your production Game ID, your Game Server URL and your checkout endpoint.
@@ -88,7 +88,7 @@ Or import the **Demo** sample (**Package Manager > Invo SDK > Samples**).
 2. Delete the rest of the old SDK: `Assets/APIManager.cs`, `Assets/InvoSDK/Scripts`,
    `Assets/InvoSDK/Tests`, `Assets/InvoSDK/Prefabs`, `Assets/InvoSDK/Inter`,
    `Assets/InvoSDK/NewArt`, `Assets/InvoSDK/Sprites` and `Assets/Plugins/iOS/InvoHostedApproval.mm`.
-3. Install the package, then open **InvoSDK > Settings** and press
+3. Install the package, then open **Tools > Invo SDK > Settings** and press
    **Move the 3.0 key and Game ID into Sandbox**.
 
 Every file kept its GUID, so your scenes and prefabs keep their references, and `APIManager`

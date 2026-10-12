@@ -13,6 +13,9 @@ First Asset Store release.
 
 ### Changed
 
+- **Editor menus moved to Tools > Invo SDK** (Settings, Setup Wizard, Item Catalog, Test
+  Purchase, Check Player Balance), as the Asset Store requires. The Create > InvoSDK asset menus
+  are unchanged.
 - **Sandbox keys go into Development builds only.** The build guard now strips sandbox keys and
   the test player from every build without Development Build ticked, as it already did for
   production builds, and `InvoSDKConfig.ActiveSandboxKey` is empty in any release player. A sandbox

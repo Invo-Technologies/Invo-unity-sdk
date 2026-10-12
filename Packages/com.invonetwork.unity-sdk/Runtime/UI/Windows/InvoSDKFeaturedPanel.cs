@@ -268,7 +268,7 @@ namespace InvoSDK.UI
                     _warnedAboutCheckoutEndpoint = true;
                     Debug.LogError(
                         "[InvoSDK] Real-money checkout is disabled: no https checkout-session endpoint is set. " +
-                        "Set it in InvoSDK > Setup Wizard (InvoSDKConfig.checkoutSessionEndpoint), or override it " +
+                        "Set it in Tools > Invo SDK > Setup Wizard (InvoSDKConfig.checkoutSessionEndpoint), or override it " +
                         "on this panel's inspector field. Point it at an endpoint on YOUR server that accepts " +
                         "POST { player_email, usd_amount } and returns { checkout_url }; server-side that endpoint " +
                         "calls POST /api/checkout/sessions with the X-Game-Secret-Key header. The SDK secret must " +

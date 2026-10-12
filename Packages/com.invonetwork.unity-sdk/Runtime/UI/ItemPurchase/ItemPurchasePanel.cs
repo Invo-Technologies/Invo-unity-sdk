@@ -47,7 +47,7 @@ namespace InvoSDK.UI
             {
                 emptyStateMessage = "The item catalog is unavailable right now.";
                 Debug.LogError(
-                    $"[InvoSDK] No item catalog found. Create one via InvoSDK > Item Catalog and save it as " +
+                    $"[InvoSDK] No item catalog found. Create one via Tools > Invo SDK > Item Catalog and save it as " +
                     $"Assets/InvoSDK/Resources/{CatalogResourceName}.asset — the store will stay empty until then.");
                 return;
             }

@@ -49,7 +49,7 @@ namespace InvoSDK
     public class InvoSDKConfig : ScriptableObject
     {
         // ------------------------------------------------------------------ 3.1 settings
-        // Edited in InvoSDK > Settings. Sandbox and production are separate INVO environments with
+        // Edited in Tools > Invo SDK > Settings. Sandbox and production are separate INVO environments with
         // separate Game IDs and separate keys. Only the sandbox side holds keys: INVO's docs say a key
         // must never ship in a production build, so production calls go through gameServerUrl.
 
@@ -72,7 +72,7 @@ namespace InvoSDK
 
         // ------------------------------------------------------------------ fields kept from 3.0
 
-        [Header("Legacy credentials (3.0) — migrated by InvoSDK > Settings")]
+        [Header("Legacy credentials (3.0) — migrated by Tools > Invo SDK > Settings")]
         [Tooltip("3.0 single sandbox key. Still honoured when no per-storefront key is set. " +
                  "Used in Play Mode and Development builds only; never put a production key here.")]
         public string sdkKey;
