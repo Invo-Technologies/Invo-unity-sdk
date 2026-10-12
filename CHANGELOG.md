@@ -19,6 +19,12 @@ First Asset Store release.
   release build without a Game Server URL logs a warning. Tick Development Build to test on devices
   against the sandbox.
 
+### Fixed
+
+- Projects without Unity's Test Framework no longer fail to compile when the package is embedded
+  (Asset Store and `.unitypackage` installs): the SDK's test assembly now only compiles when
+  `com.unity.test-framework` is installed.
+
 ### Added
 
 - `Third-Party Notices.md` for the Inter font (SIL OFL 1.1) and the QR encoder (Project Nayuki, MIT).
