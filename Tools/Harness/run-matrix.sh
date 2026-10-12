@@ -57,11 +57,12 @@ else
 fi
 
 # Sandbox smoke test: only when INVO_SANDBOX_GAME_ID and the INVO_SANDBOX_KEY_* variables are set.
-# The keys go into the harness project's config for one Windows build and are removed afterwards.
+# The keys go into the harness project's config for one Windows Development build (the only kind
+# that may carry sandbox keys) and are removed afterwards.
 if [ -n "${INVO_SANDBOX_GAME_ID:-}" ]; then
   "$U" -batchmode -quit -projectPath "$HW" -executeMethod InvoSDK.Harness.InvoHarnessSandbox.Configure -logFile "$OW\sandbox-config.log"
   "$U" -batchmode -quit -projectPath "$HW" -executeMethod InvoSDK.Harness.InvoHarnessBuild.Windows \
-    -invoOut "$OW\win-smoke" -logFile "$OW\build-win-smoke.log"
+    -invoOut "$OW\win-smoke" -invoDevelopment -logFile "$OW\build-win-smoke.log"
   "$U" -batchmode -quit -projectPath "$HW" -executeMethod InvoSDK.Harness.InvoHarnessSandbox.Strip -logFile "$OW\sandbox-strip.log"
   if [ -f "$O/win-smoke/InvoDemo.exe" ]; then
     timeout 300 "$O/win-smoke/InvoDemo.exe" -screen-width 1280 -screen-height 720 -screen-fullscreen 0 \

@@ -66,8 +66,8 @@ On 2021.3 and 2022.3 TextMeshPro is the separate `com.unity.textmeshpro` package
 add it when it is missing.
 
 1. **Window > Package Manager > + > Add package from git URL**:
-   `https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.0`
-   (or import `InvoSDK-3.1.0.unitypackage` from the release).
+   `https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.1`
+   (or import `InvoSDK-3.1.1.unitypackage` from the release).
 2. **InvoSDK > Settings** (see [Configuration](#configuration)).
 3. Drag `InvoAPI.prefab` and `InvoSDKWindow.prefab` (package `Runtime/Prefabs`) into your first scene,
    with an EventSystem whose input module matches your project's input handling.
@@ -103,13 +103,14 @@ The Settings window detects this and offers to select the stray asset.
 - `playerEmail`, `playerName`, `playerPhone` are the test player. In a real game call
   `APIManager.Instance.SetActivePlayer(email, name, phone)` from your login.
 
-> ### A sandbox key ships in sandbox builds
+> ### Sandbox keys go into Development builds only
 >
 > Unity bundles everything under a `Resources/` folder into the player. Anyone can recover a key from
 > `resources.assets` in about a minute. An extracted key is a **full tenant credential**: it can charge
 > cards, move any player's balance, request a payout, mint player tokens and reconfigure webhooks.
-> Sandbox and production keys look identical. That is why only the Sandbox tab takes keys, and why
-> production builds are stripped of them.
+> Sandbox and production keys look identical. That is why only the Sandbox tab takes keys, why the
+> build guard strips them from every production and release build, and why release players ignore
+> them. Don't distribute Development builds.
 
 **If a key leaks, rotate it with `immediate: true`.** The default rotation keeps the old key working for a 7-day grace window, and that grace is not honored uniformly across endpoints — some accept the previous key during the window while others reject it at once. For a leaked key, take the hard cutover.
 

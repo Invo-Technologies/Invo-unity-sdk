@@ -14,7 +14,7 @@
   <a href="#requirements"><img src="https://img.shields.io/badge/tested-2021.3%20%7C%202022.3%20%7C%206000.0-green.svg" alt="Tested on 2021.3, 2022.3 and 6000.0"></a>
   <a href="#requirements"><img src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS%20%7C%20Android%20%7C%20WebGL-lightgrey.svg" alt="Platforms"></a>
   <a href="#license"><img src="https://img.shields.io/badge/license-MIT-orange.svg" alt="License"></a>
-  <a href="https://github.com/Invo-Technologies/Invo-unity-sdk/releases"><img src="https://img.shields.io/badge/version-3.1.0-blueviolet.svg" alt="Version 3.1.0"></a>
+  <a href="https://github.com/Invo-Technologies/Invo-unity-sdk/releases"><img src="https://img.shields.io/badge/version-3.1.1-blueviolet.svg" alt="Version 3.1.1"></a>
 </p>
 
 <p align="center">
@@ -49,7 +49,7 @@ It is a client. A production launch also needs a small server of your own that h
 - **New UI.** New prefabs for Store (Top up and Items), Send, Transfer, Collect and Phone, a live balance label, a game picker with search, recent recipients, and a single `InvoTheme` asset that restyles every panel without editing prefabs.
 - **Settings window** (`InvoSDK > Settings`) with separate Sandbox and Production tabs, one sandbox key per storefront, and Test connection buttons.
 - **Storefronts.** The SDK knows which store a build is for (Steam, Google Play, App Store, PlayStation, Xbox, Nintendo Switch, Epic, Web, Platform) and tells your game server through the `X-Invo-Storefront` header.
-- **Build guard.** A production build fails without a production Game ID and an https Game Server URL, and never contains a sandbox key or the test player.
+- **Build guard.** Sandbox keys only go into Development builds. A production build fails without a production Game ID and an https Game Server URL, and no production or release build ever contains a sandbox key or the test player.
 - **Phone change.** Players can change their phone number. Secured accounts confirm through a link INVO emails them.
 - **Collect panel.** Lists everything waiting for the player, each with its own Collect button. No claim-code form.
 - **Fixes from 3.0.** Requests and polling delays now work on 2021.3 and 2022.3 (and on WebGL). The Inter font asset rendered no text on 2021.3/2022.3. `InvoDeviceApprovalPanelView` could not be saved in a scene or prefab.
@@ -125,7 +125,7 @@ The same screens on 2021.3 and 2022.3 are in `Docs/screenshots/2021.3/` and `Doc
 **2. Install the package.** In **Window > Package Manager**, choose **+ > Add package from git URL** and enter:
 
 ```
-https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.0
+https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.1
 ```
 
 On Unity 2021.3 or 2022.3, accept the dialog that offers to add TextMeshPro if it appears.
@@ -198,20 +198,20 @@ The tests above are editor tests. Console targets are handled in code (storefron
 **Window > Package Manager > + > Add package from git URL**:
 
 ```
-https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.0
+https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.1
 ```
 
 Or add it to `Packages/manifest.json`:
 
 ```json
-"com.invonetwork.unity-sdk": "https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.0"
+"com.invonetwork.unity-sdk": "https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.1"
 ```
 
-The `#v3.1.0` suffix pins the release. Change it to upgrade.
+The `#v3.1.1` suffix pins the release. Change it to upgrade.
 
 ### From a .unitypackage
 
-Download `InvoSDK-3.1.0.unitypackage` from the [GitHub release](https://github.com/Invo-Technologies/Invo-unity-sdk/releases) and import it. It contains the same package; Unity places it under `Packages/` as an embedded package.
+Download `InvoSDK-3.1.1.unitypackage` from the [GitHub release](https://github.com/Invo-Technologies/Invo-unity-sdk/releases) and import it. It contains the same package; Unity places it under `Packages/` as an embedded package.
 
 ### What is in the package
 
@@ -272,7 +272,7 @@ Sandbox and production are **separate INVO environments**: separate databases, s
 | API base | `https://sandbox.invo.network/sandbox/api` | `https://invo.network/api` |
 | Console | [dev.console.invo.network](https://dev.console.invo.network) | [console.invo.network](https://console.invo.network) |
 | Payments | Test cards only | Real money |
-| Keys in the Unity build | Allowed (sandbox keys only) | **Never** |
+| Keys in the Unity build | Development builds only (sandbox keys) | **Never** |
 
 The API bases are compile-time constants (`APIManager.SandboxApiBase`, `APIManager.ProductionApiBase`), not Inspector fields. A mistyped host would send your key somewhere that is not Invo.
 
@@ -286,7 +286,7 @@ The API bases are compile-time constants (`APIManager.SandboxApiBase`, `APIManag
 | Test player | `playerEmail`, `playerPhone`, `playerName` | The initial active player, for sandbox testing. Stripped from production builds. |
 | SANDBOX watermark | `showSandboxWatermark` | A small "SANDBOX · Steam" label in the editor and development builds while the SDK talks to sandbox. Never in release builds. |
 
-Sandbox keys may ship in sandbox and development builds. They are still extractable from the build, so treat them as public.
+Sandbox keys go into Play Mode and Development builds only; the build guard strips them from every other build, and release players ignore them. A Development build's keys are still extractable, so treat sandbox keys as public and don't distribute Development builds.
 
 ### Production tab
 
@@ -332,12 +332,13 @@ In sandbox the SDK sends that storefront's sandbox key. In production it sends t
 
 ### Build guard
 
-`InvoBuildGuard` runs before and after every build. When `useProduction` is on:
+`InvoBuildGuard` runs before and after every build.
 
-- **The build fails** if the production Game ID is empty, if the Game Server URL is empty or not https, or if the checkout session endpoint is set but not https. The error lists each problem.
-- **Sandbox keys and the test player are stripped** from the config before the build and restored after it. The values are backed up under `Library/InvoSDK/` first, so an editor crash mid-build cannot lose them; the next editor start restores them.
+- **Production builds** (`useProduction` on) **fail** if the production Game ID is empty, if the Game Server URL is empty or not https, or if the checkout session endpoint is set but not https. The error lists each problem.
+- **Sandbox keys and the test player are stripped** from every production build and every build without **Development Build** ticked, and restored after it. The values are backed up under `Library/InvoSDK/` first, so an editor crash mid-build cannot lose them; the next editor start restores them. A sandbox release build without a Game Server URL logs a warning, because its INVO calls that need a key will fail.
+- **Development builds** in sandbox keep the keys, so you can test on devices against the sandbox.
 
-Sandbox builds are not changed.
+At runtime, `ActiveSandboxKey` is also empty in any release player, whatever the config says.
 
 ### One config asset, not two
 
@@ -490,7 +491,7 @@ Keep the QR `RawImage` square, with the texture's white border intact, and draw 
 
 Unity bundles everything under a `Resources/` folder into the player. `InvoSDKConfig.asset` is under `Assets/InvoSDK/Resources/`, so any key in it is in `resources.assets` in every build. Anyone with a copy of the game can recover it with `strings` in about a minute. No obfuscation changes this: the game has to read the key at runtime.
 
-That is why 3.1 keeps production keys out of the config entirely, and why the build guard strips sandbox keys from production builds.
+That is why 3.1 keeps production keys out of the config entirely, and why the build guard strips sandbox keys from every production and release build.
 
 ### What an extracted key can do
 
@@ -520,7 +521,7 @@ The default rotation keeps the old key working for a **7-day grace window**, and
 
 | | |
 |---|---|
-| Sandbox key in the config | Allowed. Treat it as public. |
+| Sandbox key in the config | Allowed; Development builds only. Treat it as public. |
 | Production key anywhere in the Unity project | **Never.** The Production tab has no key field for this reason. |
 | Production integration | **Requires a [server-side proxy](#server-side-proxy).** |
 
@@ -661,7 +662,7 @@ const string SandboxApiBase    = "https://sandbox.invo.network/sandbox/api";
 const string ProductionApiBase = "https://invo.network/api";
 const string GameServerRequiredCode = "SDK_GAME_SERVER_REQUIRED";
 string ApiBase { get; }                  // resolved environment root
-string ApiKey  { get; }                  // sandbox key for this storefront; always empty in production
+string ApiKey  { get; }                  // sandbox key for this storefront; empty in production and release players
 string GameId  { get; }                  // Game ID of the active environment
 InvoStorefront Storefront { get; }       // sent to your server as X-Invo-Storefront
 bool UseProduction { get; }

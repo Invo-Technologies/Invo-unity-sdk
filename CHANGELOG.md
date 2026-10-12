@@ -7,6 +7,29 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [3.1.1] — 2026-10-12
+
+First Asset Store release.
+
+### Changed
+
+- **Sandbox keys go into Development builds only.** The build guard now strips sandbox keys and
+  the test player from every build without Development Build ticked, as it already did for
+  production builds, and `InvoSDKConfig.ActiveSandboxKey` is empty in any release player. A sandbox
+  release build without a Game Server URL logs a warning. Tick Development Build to test on devices
+  against the sandbox.
+
+### Added
+
+- `Third-Party Notices.md` for the Inter font (SIL OFL 1.1) and the QR encoder (Project Nayuki, MIT).
+
+### Removed
+
+- The unused static Inter font files and the font download's readme (about 2.7 MB). The SDK uses
+  the variable font only.
+
+---
+
 ## [3.1.0] — 2026-10-12
 
 The SDK is now a Unity package that supports Unity 2021.3 LTS and newer, with a new

@@ -16,10 +16,10 @@ The full guide (API reference, error handling, server-side proxy, security) is t
 **+ > Add package from git URL** and enter:
 
 ```
-https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.0
+https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.1
 ```
 
-**.unitypackage.** Import `InvoSDK-3.1.0.unitypackage` from the GitHub release.
+**.unitypackage.** Import `InvoSDK-3.1.1.unitypackage` from the GitHub release.
 
 Dependencies are added automatically: `com.unity.nuget.newtonsoft-json` and `com.unity.ugui`.
 
@@ -36,7 +36,7 @@ package, either for Both.
 
 1. **InvoSDK > Settings.**
    - **Sandbox tab:** your sandbox Game ID and one sandbox key per storefront you sell on.
-     Sandbox and development builds may carry these keys.
+     Only Play Mode and Development builds use these keys; every other build is stripped of them.
    - **Production tab:** your production Game ID, your Game Server URL and your checkout endpoint.
      There are no key fields: INVO's docs say a key must never go into a Unity build. Your server
      holds one production key per storefront and receives the storefront in `X-Invo-Storefront`.

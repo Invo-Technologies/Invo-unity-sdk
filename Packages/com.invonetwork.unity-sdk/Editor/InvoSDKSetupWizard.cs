@@ -163,8 +163,9 @@ namespace InvoSDK.Editor
         private void DrawSandboxTab()
         {
             EditorGUILayout.HelpBox(
-                "Sandbox keys may ship in sandbox and development builds, as INVO's docs allow. " +
-                "The build check strips them, and the test player, from every production build.",
+                "Sandbox keys are used in Play Mode and Development builds only. The build check strips " +
+                "them, and the test player, from every production build and every build without " +
+                "Development Build ticked.",
                 MessageType.Info);
 
             DrawMigration();

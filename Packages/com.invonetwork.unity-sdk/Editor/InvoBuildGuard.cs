@@ -9,11 +9,12 @@ using UnityEngine;
 namespace InvoSDK.Editor
 {
     /// <summary>
-    /// Keeps INVO keys out of production builds, as INVO's docs require ("never ship an SDK key in
-    /// client builds"). Before a production build it checks the production settings and strips every
-    /// sandbox key and the test player from the config asset; after the build it puts them back.
-    /// The stripped values are backed up under Library/ first, so an editor crash mid-build cannot
-    /// lose them: the next editor start restores the backup.
+    /// Keeps INVO keys out of every build that could reach players, as INVO's docs require ("never
+    /// ship an SDK key in client builds"). Sandbox keys go into Development builds only: before a
+    /// production build, or any build without Development Build ticked, it strips every sandbox key
+    /// and the test player from the config asset, and after the build it puts them back. Production
+    /// builds also have their settings checked. The stripped values are backed up under Library/
+    /// first, so an editor crash mid-build cannot lose them: the next editor start restores the backup.
     /// </summary>
     internal sealed class InvoBuildGuard : IPreprocessBuildWithReport, IPostprocessBuildWithReport
     {
@@ -36,13 +37,25 @@ namespace InvoSDK.Editor
         {
             RestoreIfBackedUp();
             InvoSDKConfig config = InvoSDKSetupWizard.FindConfig();
-            if (config == null || !config.useProduction)
+            if (config == null)
+                return;
+            bool development = (report.summary.options & BuildOptions.Development) != 0;
+            if (!config.useProduction && development)
                 return;
 
-            List<string> problems = ProductionProblems(config);
-            if (problems.Count > 0)
-                throw new BuildFailedException("[InvoSDK] Production build stopped:\n- " + string.Join("\n- ", problems) +
-                                               "\nFix it in InvoSDK > Settings > Production.");
+            if (config.useProduction)
+            {
+                List<string> problems = ProductionProblems(config);
+                if (problems.Count > 0)
+                    throw new BuildFailedException("[InvoSDK] Production build stopped:\n- " + string.Join("\n- ", problems) +
+                                                   "\nFix it in InvoSDK > Settings > Production.");
+            }
+            else if (string.IsNullOrWhiteSpace(config.gameServerUrl))
+            {
+                Debug.LogWarning("[InvoSDK] Sandbox keys only go into Development builds, and this build is not one. " +
+                                 "INVO calls that need a key will fail in it. Tick Development Build to test against the " +
+                                 "sandbox, or set a Game Server URL in InvoSDK > Settings.");
+            }
 
             var backup = new Backup
             {
@@ -63,7 +76,8 @@ namespace InvoSDK.Editor
             config.playerName = string.Empty;
             EditorUtility.SetDirty(config);
             AssetDatabase.SaveAssets();
-            Debug.Log("[InvoSDK] Production build: sandbox keys and test player stripped from the build.");
+            Debug.Log("[InvoSDK] " + (config.useProduction ? "Production" : "Release") +
+                      " build: sandbox keys and test player stripped from the build.");
         }
 
         public void OnPostprocessBuild(BuildReport report) => RestoreIfBackedUp();
