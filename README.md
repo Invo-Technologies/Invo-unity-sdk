@@ -1510,7 +1510,7 @@ public class SendController : MonoBehaviour
 
 ## License
 
-Released under the MIT License.
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Invo Technologies.
 
 ---
 

@@ -10,6 +10,8 @@
     "name": "Invo Technologies",
     "url": "https://invo.network"
   },
+  "license": "MIT",
+  "licensesUrl": "https://github.com/Invo-Technologies/Invo-unity-sdk/blob/main/LICENSE",
   "keywords": [
     "invo",
     "currency",

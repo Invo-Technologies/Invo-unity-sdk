@@ -60,6 +60,7 @@ Tested on Unity 2021.3.45f2, 2022.3.62f3 and 6000.0.58f2 (see the pull request's
   `InvoPhone.MaskShort`, `InvoSDKWindowController`, `InvoTabBar`.
 - Demo sample with `InvoCaptureDriver` (`-invoCapture <dir>` saves screenshots of every
   screen), and 17 new EditMode tests (94 in total).
+- MIT `LICENSE` (repository root and package).
 - Demo sample `InvoSandboxSmoke` (`-invoSmoke <file>`): balance, catalog, one item purchase
   and a send and a transfer up to the QR approval against INVO's sandbox, never approved.
 
