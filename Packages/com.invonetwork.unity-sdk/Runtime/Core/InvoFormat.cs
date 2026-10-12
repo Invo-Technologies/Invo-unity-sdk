@@ -107,5 +107,13 @@ namespace InvoSDK
             string digits = NonDialCharacters.Replace(raw, string.Empty).Replace("+", string.Empty);
             return digits.Length <= 4 ? new string('*', digits.Length) : new string('*', digits.Length - 4) + digits.Substring(digits.Length - 4);
         }
+
+        /// <summary>The short on-screen form, "••• 0111": the last four digits only.</summary>
+        public static string MaskShort(string raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return string.Empty;
+            string digits = NonDialCharacters.Replace(raw, string.Empty).Replace("+", string.Empty);
+            return digits.Length <= 4 ? "•••" : "••• " + digits.Substring(digits.Length - 4);
+        }
     }
 }

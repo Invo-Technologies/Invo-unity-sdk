@@ -73,7 +73,7 @@ namespace InvoSDK.Editor
             if (isSending) return;
 
             var cfg = LoadConfig();
-            string sdkKey = cfg != null ? cfg.sdkKey : null;
+            string sdkKey = cfg != null ? cfg.SandboxKeyFor(cfg.ActiveStorefront) : null;
 
             if (string.IsNullOrEmpty(sdkKey))
             {

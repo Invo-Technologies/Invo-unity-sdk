@@ -51,8 +51,8 @@ namespace InvoSDK
 
         // The API roots are fixed per environment — they are not inspector-tunable, because
         // a mistyped host silently sends the game secret to somewhere that is not Invo.
-        private const string ProductionApiBase = "https://invo.network/api";
-        private const string SandboxApiBase = "https://sandbox.invo.network/sandbox/api";
+        public const string ProductionApiBase = "https://invo.network/api";
+        public const string SandboxApiBase = "https://sandbox.invo.network/sandbox/api";
 
         /// <summary>Error code on the exception thrown when a game-secret call has no legal route.</summary>
         public const string GameServerRequiredCode = "SDK_GAME_SERVER_REQUIRED";
@@ -159,8 +159,12 @@ namespace InvoSDK
         // ENVIRONMENT / CONFIG
         // =========================
         public string ApiBase => useProduction ? ProductionApiBase : SandboxApiBase;
-        public string ApiKey => config != null ? config.sdkKey : string.Empty;
-        public string GameId => config != null ? config.gameId : string.Empty;
+        /// <summary>The sandbox key for this build's storefront; always empty in production.</summary>
+        public string ApiKey => config != null ? config.ActiveSandboxKey : string.Empty;
+        /// <summary>The Game ID of the active environment (sandbox and production are separate titles).</summary>
+        public string GameId => config != null ? config.ActiveGameId : string.Empty;
+        /// <summary>The storefront this build belongs to; sent to your game server as X-Invo-Storefront.</summary>
+        public InvoStorefront Storefront => config != null ? config.ActiveStorefront : InvoStorefront.Steam;
         public bool UseProduction => useProduction;
 
         /// <summary>True when game-secret calls are routed through your server.</summary>
@@ -288,9 +292,18 @@ namespace InvoSDK
 
         private void SetBalanceLabel(string text)
         {
+            string shown = string.IsNullOrEmpty(text) ? "-" : text;
             if (playerbalance != null)
-                playerbalance.text = string.IsNullOrEmpty(text) ? "-" : text;
+                playerbalance.text = shown;
+            LastBalance = shown;
+            BalanceChanged?.Invoke(shown);
         }
+
+        /// <summary>The spendable balance from the last poll ("-" when unknown).</summary>
+        public string LastBalance { get; private set; } = "-";
+
+        /// <summary>Raised after every balance poll with the spendable balance. <see cref="UI.InvoBalanceLabel"/> uses it.</summary>
+        public static event Action<string> BalanceChanged;
 
         // =========================
         // BALANCE
@@ -394,6 +407,90 @@ namespace InvoSDK
             var payload = new Dictionary<string, object> { ["source_game_id"] = GameId };
             return SendAsync("POST", "/transfers/available-destinations", payload, Auth.GameSecret, onSuccess, onError);
         }
+
+        /// <summary>
+        /// Titles where the active player already plays, most recent first, with their balance there.
+        /// Not filtered like the available-destinations lists: offer only games that also appear in
+        /// <see cref="GetTransferDestinationsAsync"/> or <see cref="GetSendDestinationsAsync"/>.
+        /// </summary>
+        public Task<PlayerDestinationsResponse> GetPlayerDestinationsAsync(
+            Action<PlayerDestinationsResponse> onSuccess = null,
+            Action<InvoApiException> onError = null)
+        {
+            var payload = new Dictionary<string, object>
+            {
+                ["email"] = GetPlayerEmail(),
+                ["phone"] = InvoPhone.Normalize(GetPlayerPhone()) ?? GetPlayerPhone()
+            };
+            return SendAsync("POST", "/players/destinations", payload, Auth.GameSecret, onSuccess, onError);
+        }
+
+        // =========================
+        // PLAYER PHONE
+        // =========================
+
+        /// <summary>
+        /// Changes the active player's phone. On a secured account INVO answers
+        /// <c>409 PHONE_CHANGE_REQUIRES_VERIFICATION</c>: then call <see cref="CreatePhoneChangeRequestAsync"/>.
+        /// On success the SDK switches to the new number, and to the new player token when the
+        /// identity was re-keyed. Game-secret route (your server in production).
+        /// </summary>
+        public async Task<PhoneChangeResponse> ChangePlayerPhoneAsync(string newPhone)
+        {
+            string normalized = InvoPhone.Normalize(newPhone);
+            if (normalized == null)
+                throw new InvoApiException(InvoPhone.DescribeProblem(newPhone), 400, "INVALID_PHONE", null, null, null);
+            var payload = new Dictionary<string, object> { ["player_email"] = GetPlayerEmail(), ["new_phone"] = normalized };
+            var resp = await SendAsync<PhoneChangeResponse>("POST", "/sdk/players/phone", payload, Auth.GameSecret, null, null);
+            if (resp != null)
+                ApplyConfirmedPhone(normalized, resp.identity_rekeyed ? resp.player_token : null, resp.player_token_expires_at);
+            return resp;
+        }
+
+        /// <summary>
+        /// Starts a confirmed phone change. INVO emails the player a code and a link; they confirm on
+        /// INVO's page, never in the game. A new request replaces an earlier pending one. Poll
+        /// <see cref="GetPhoneChangeRequestAsync"/> until it is no longer pending, then call
+        /// <see cref="ApplyConfirmedPhone"/> with the new number.
+        /// </summary>
+        public Task<PhoneChangeRequest> CreatePhoneChangeRequestAsync(string newPhone)
+        {
+            string normalized = InvoPhone.Normalize(newPhone);
+            if (normalized == null)
+                throw new InvoApiException(InvoPhone.DescribeProblem(newPhone), 400, "INVALID_PHONE", null, null, null);
+            var payload = new Dictionary<string, object> { ["player_email"] = GetPlayerEmail(), ["new_phone"] = normalized };
+            return SendAsync<PhoneChangeRequest>("POST", "/sdk/players/phone/change-requests", payload, Auth.GameSecret, null, null);
+        }
+
+        /// <summary>Reads a phone change request's status. Game-secret route.</summary>
+        public Task<PhoneChangeRequest> GetPhoneChangeRequestAsync(string changeRequestId)
+        {
+            if (string.IsNullOrWhiteSpace(changeRequestId))
+                throw new ArgumentException("changeRequestId is required.", nameof(changeRequestId));
+            return SendAsync<PhoneChangeRequest>("GET",
+                "/sdk/players/phone/change-requests/" + UnityWebRequest.EscapeURL(changeRequestId),
+                null, Auth.GameSecret, null, null);
+        }
+
+        /// <summary>
+        /// Switches the SDK to a phone INVO has confirmed. Drops the cached token, or adopts
+        /// <paramref name="newToken"/>, because the identity may have been re-keyed. Persist the new
+        /// number in your own account system too.
+        /// </summary>
+        public void ApplyConfirmedPhone(string phone, string newToken = null, string newTokenExpiresAt = null)
+        {
+            activePlayerPhone = phone;
+            ClearPlayerToken();
+            if (!string.IsNullOrEmpty(newToken))
+            {
+                playerToken = newToken;
+                playerTokenExpiresUtc = ParseExpiry(newTokenExpiresAt);
+            }
+            PlayerPhoneChanged?.Invoke(phone);
+        }
+
+        /// <summary>Raised after <see cref="ApplyConfirmedPhone"/>. Panels that show the player's phone refresh.</summary>
+        public static event Action<string> PlayerPhoneChanged;
 
         // =========================
         // CURRENCY SENDS
@@ -652,8 +749,17 @@ namespace InvoSDK
                     if (string.IsNullOrEmpty(email))
                         throw new InvoApiException("No active player: call APIManager.SetActivePlayer first.",
                                                    0, "SDK_NO_ACTIVE_PLAYER", null, null, null);
+                    // INVO's docs: "Always pass the phone." Email plus phone is the player identity.
                     var payload = new Dictionary<string, object> { ["player_email"] = email };
+                    string phone = InvoPhone.Normalize(GetPlayerPhone());
+                    if (!string.IsNullOrEmpty(phone))
+                        payload["player_phone"] = phone;
+                    if (!string.IsNullOrWhiteSpace(GetPlayerName()))
+                        payload["player_name"] = GetPlayerName();
                     resp = await SendAsync<PlayerTokenResponse>("POST", "/sdk/player-token", payload, Auth.GameSecret, null, null);
+                    if (resp != null && resp.phone_mismatch)
+                        Debug.LogWarning("[InvoSDK] INVO holds a different phone for this player; the token was issued " +
+                                         "for INVO's number. Do not push the stored number back to INVO.");
                 }
 
                 if (resp == null || string.IsNullOrEmpty(resp.token))
@@ -866,7 +972,7 @@ namespace InvoSDK
                     useProduction
                         ? "This call needs the game secret, which must never ship in a production build. " +
                           "Set InvoSDKConfig.gameServerUrl to your server (README, 'Server-side proxy')."
-                        : "No route for a game-secret call: set InvoSDKConfig.sdkKey (sandbox) or gameServerUrl.",
+                        : "No route for a game-secret call: add a sandbox key in InvoSDK > Settings, or set gameServerUrl.",
                     0, GameServerRequiredCode, null, null, null);
                 onError?.Invoke(refused);
                 throw refused;
@@ -874,9 +980,15 @@ namespace InvoSDK
 
             using var req = BuildRequest(method, url, payload);
             if (secret != null)
+            {
                 req.SetRequestHeader("X-Game-Secret-Key", secret);
+            }
             else
+            {
+                // Your server holds one key per storefront; this header says which one to attach.
+                req.SetRequestHeader("X-Invo-Storefront", InvoStorefrontResolver.WireName(Storefront));
                 GameServerRequestDecorator?.Invoke(req);
+            }
 
             await InvoWebRequest.SendAsync(req);
             return HandleResponse(method, url, req, onSuccess, onError);

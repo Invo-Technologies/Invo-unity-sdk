@@ -32,7 +32,7 @@ namespace InvoSDK.Editor
         private static string ResolveScheme()
         {
             InvoSDKConfig config = Resources.Load<InvoSDKConfig>("InvoSDKConfig");
-            string scheme = config != null ? InvoHostedApprovalCore.ReturnScheme(config.gameId) : null;
+            string scheme = config != null ? InvoHostedApprovalCore.ReturnScheme(config.ActiveGameId) : null;
             if (scheme == null)
                 Debug.LogWarning("[InvoSDK] No numeric gameId in InvoSDKConfig; the hosted-approval return scheme was not registered.");
             return scheme;

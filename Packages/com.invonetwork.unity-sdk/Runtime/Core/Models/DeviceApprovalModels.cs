@@ -52,6 +52,13 @@ namespace InvoSDK
         public string expires_at;
         /// <summary>Opaque player identity. Never the raw identity hash.</summary>
         public string identity_id;
+        /// <summary>True when the player was created by this mint.</summary>
+        public bool created;
+        /// <summary>
+        /// True when INVO already holds a different phone for this player. The token is issued for
+        /// INVO's phone and the one sent was ignored: do not push your stored number back to INVO.
+        /// </summary>
+        public bool phone_mismatch;
     }
 
     /// <summary>Response of <c>POST /api/sdk/approvals/device/begin</c> (RFC 8628 section 3.2 names).</summary>
