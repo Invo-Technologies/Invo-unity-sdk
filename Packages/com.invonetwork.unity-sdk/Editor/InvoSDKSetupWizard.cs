@@ -27,7 +27,7 @@ namespace InvoSDK.Editor
 
         private const string ReadmeProxySectionUrl =
             "https://github.com/Invo-Technologies/Invo-unity-sdk#server-side-proxy";
-        private const string SandboxConsoleUrl = "https://dev.console.invo.network";
+        private const string SandboxConsoleUrl = "https://console.invo.network/test";
         private const string ProductionConsoleUrl = "https://console.invo.network";
 
         private static readonly InvoStorefront[] DefaultStorefronts =

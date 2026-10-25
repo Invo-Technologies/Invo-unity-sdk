@@ -41,7 +41,7 @@ Linux, Android, iOS, WebGL and consoles.
 |---|---|---|
 | Host | `https://invo.network` | `https://sandbox.invo.network` |
 | API routes | `/api/*` | `/sandbox/api/*` |
-| Console | `console.invo.network` | `dev.console.invo.network` |
+| Console | `console.invo.network` | `console.invo.network/test` |
 | Payments | Real money | Test cards only |
 
 Sandbox and production are **fully isolated databases with independent SDK keys**. A sandbox key does not work against production, and vice versa.

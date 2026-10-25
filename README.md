@@ -120,7 +120,7 @@ The same screens on 2021.3 and 2022.3 are in `Docs/screenshots/2021.3/` and `Doc
 
 ## Quick start
 
-**1. Get sandbox credentials.** Sign in to the [sandbox console](https://dev.console.invo.network), create a game, and copy its **Game ID** and a **sandbox SDK key** for each storefront you sell on.
+**1. Get sandbox credentials.** Sign in to the [sandbox console](https://console.invo.network/test), create a game, and copy its **Game ID** and a **sandbox SDK key** for each storefront you sell on.
 
 **2. Install the package.** In **Window > Package Manager**, choose **+ > Add package from git URL** and enter:
 
@@ -270,7 +270,7 @@ Sandbox and production are **separate INVO environments**: separate databases, s
 | | Sandbox | Production |
 |---|---|---|
 | API base | `https://sandbox.invo.network/sandbox/api` | `https://invo.network/api` |
-| Console | [dev.console.invo.network](https://dev.console.invo.network) | [console.invo.network](https://console.invo.network) |
+| Console | [console.invo.network/test](https://console.invo.network/test) | [console.invo.network](https://console.invo.network) |
 | Payments | Test cards only | Real money |
 | Keys in the Unity build | Development builds only (sandbox keys) | **Never** |
 
@@ -1497,7 +1497,7 @@ public class SendController : MonoBehaviour
 | Unity SDK docs | [docs.invo.network/docs/unity-sdk](https://docs.invo.network/docs/unity-sdk) |
 | API reference | [docs.invo.network/api](https://docs.invo.network/api) |
 | Developer console | [console.invo.network](https://console.invo.network) |
-| Sandbox console | [dev.console.invo.network](https://dev.console.invo.network) |
+| Sandbox console | [console.invo.network/test](https://console.invo.network/test) |
 | Changelog | [CHANGELOG.md](CHANGELOG.md) |
 | 3.0 specification | [InvoSDK-README.md](InvoSDK-README.md) |
 | Issues | [GitHub Issues](https://github.com/Invo-Technologies/Invo-unity-sdk/issues) |
