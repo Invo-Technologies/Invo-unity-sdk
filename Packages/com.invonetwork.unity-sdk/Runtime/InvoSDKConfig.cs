@@ -34,7 +34,9 @@ namespace InvoSDK
     public class InvoStorefrontKey
     {
         public InvoStorefront storefront;
-        [Tooltip("SANDBOX key (ivsdk_...) for this storefront. Used in Play Mode and Development builds only; release and production builds never carry it.")]
+        [Tooltip("SANDBOX key for this storefront. New sandbox keys look like ivsdk_test_...; older ivsdk_... keys still work. " +
+                 "Never put a production key (ivsdk_live_...) here. Used in Play Mode and Development builds only; " +
+                 "release and production builds never carry it.")]
         public string sdkKey;
     }
 
@@ -55,7 +57,7 @@ namespace InvoSDK
 
         [Header("Sandbox")]
         public string sandboxGameId;
-        [Tooltip("One sandbox key per storefront. The SDK uses the key for the storefront the build runs on.")]
+        [Tooltip("One sandbox key (ivsdk_test_...) per storefront. The SDK uses the key for the storefront the build runs on.")]
         public List<InvoStorefrontKey> sandboxKeys = new List<InvoStorefrontKey>();
 
         [Header("Production (no keys, by design)")]
@@ -73,7 +75,7 @@ namespace InvoSDK
         // ------------------------------------------------------------------ fields kept from 3.0
 
         [Header("Legacy credentials (3.0) — migrated by Tools > Invo SDK > Settings")]
-        [Tooltip("3.0 single sandbox key. Still honoured when no per-storefront key is set. " +
+        [Tooltip("3.0 single sandbox key (ivsdk_test_... or an older ivsdk_...). Still honoured when no per-storefront key is set. " +
                  "Used in Play Mode and Development builds only; never put a production key here.")]
         public string sdkKey;
 

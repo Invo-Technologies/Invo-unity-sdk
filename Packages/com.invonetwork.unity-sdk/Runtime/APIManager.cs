@@ -1139,6 +1139,10 @@ namespace InvoSDK
             if (!retryAfter.HasValue)
                 retryAfter = ParseSeconds(req.GetResponseHeader("Retry-After"));
 
+            // The server's text for this one is generic; say which setting to check.
+            if (errorCode == InvoApiException.KeyForOtherEnvironmentCode)
+                message = InvoApiException.KeyForOtherEnvironmentMessage;
+
             if (string.IsNullOrEmpty(message))
             {
                 message = status == 0

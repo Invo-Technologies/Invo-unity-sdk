@@ -16,10 +16,10 @@ The full guide (API reference, error handling, server-side proxy, security) is t
 **+ > Add package from git URL** and enter:
 
 ```
-https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.1
+https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.2
 ```
 
-**.unitypackage.** Import `InvoSDK-3.1.1.unitypackage` from the GitHub release.
+**.unitypackage.** Import `InvoSDK-3.1.2.unitypackage` from the GitHub release.
 
 Dependencies are added automatically: `com.unity.nuget.newtonsoft-json` and `com.unity.ugui`.
 

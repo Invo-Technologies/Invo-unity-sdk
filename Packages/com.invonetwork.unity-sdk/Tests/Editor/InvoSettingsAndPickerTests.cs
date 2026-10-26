@@ -157,5 +157,34 @@ namespace InvoSDK.Tests
             Assert.AreEqual("•••", InvoPhone.MaskShort("123"));
             Assert.AreEqual(string.Empty, InvoPhone.MaskShort(null));
         }
+
+        // ------------------------------------------------------------------ key prefixes
+
+        [Test]
+        public void KeyStatus_AcceptsTestAndOlderKeys_AndFlagsLiveKeys()
+        {
+            Assert.AreEqual("Looks valid", InvoSDKSetupWizard.KeyStatus("ivsdk_test_abc"));
+            Assert.AreEqual("Looks valid", InvoSDKSetupWizard.KeyStatus("ivsdk_abc"), "older keys keep working");
+            Assert.AreEqual("Live key", InvoSDKSetupWizard.KeyStatus("ivsdk_live_abc"));
+            Assert.AreEqual("Not ivsdk_", InvoSDKSetupWizard.KeyStatus("sk_abc"));
+            Assert.AreEqual("Has spaces", InvoSDKSetupWizard.KeyStatus(" ivsdk_live_abc "));
+            Assert.AreEqual("Not set", InvoSDKSetupWizard.KeyStatus(""));
+        }
+
+        [Test]
+        public void TestConnection_ExplainsAKeyForTheOtherEnvironment()
+        {
+            const string body = "{\"error\":\"Unauthorized\",\"error_code\":\"KEY_FOR_OTHER_ENVIRONMENT\"}";
+            Assert.AreEqual(InvoApiException.KeyForOtherEnvironmentMessage, InvoSDKSetupWizard.DescribeFailure(401, body));
+            StringAssert.StartsWith("The key was refused", InvoSDKSetupWizard.DescribeFailure(401, "{\"error\":\"Unauthorized\"}"));
+            StringAssert.StartsWith("The key was refused", InvoSDKSetupWizard.DescribeFailure(401, "<html>proxy</html>"));
+        }
+
+        [Test]
+        public void ApiException_FlagsAKeyForTheOtherEnvironment()
+        {
+            Assert.IsTrue(new InvoApiException("m", 401, "KEY_FOR_OTHER_ENVIRONMENT", null, null, null).IsKeyForOtherEnvironment);
+            Assert.IsFalse(new InvoApiException("m", 401, "UNAUTHORIZED", null, null, null).IsKeyForOtherEnvironment);
+        }
     }
 }

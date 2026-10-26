@@ -14,7 +14,7 @@
   <a href="#requirements"><img src="https://img.shields.io/badge/tested-2021.3%20%7C%202022.3%20%7C%206000.0-green.svg" alt="Tested on 2021.3, 2022.3 and 6000.0"></a>
   <a href="#requirements"><img src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20iOS%20%7C%20Android%20%7C%20WebGL-lightgrey.svg" alt="Platforms"></a>
   <a href="#license"><img src="https://img.shields.io/badge/license-MIT-orange.svg" alt="License"></a>
-  <a href="https://github.com/Invo-Technologies/Invo-unity-sdk/releases"><img src="https://img.shields.io/badge/version-3.1.1-blueviolet.svg" alt="Version 3.1.1"></a>
+  <a href="https://github.com/Invo-Technologies/Invo-unity-sdk/releases"><img src="https://img.shields.io/badge/version-3.1.2-blueviolet.svg" alt="Version 3.1.2"></a>
 </p>
 
 <p align="center">
@@ -125,7 +125,7 @@ The same screens on 2021.3 and 2022.3 are in `Docs/screenshots/2021.3/` and `Doc
 **2. Install the package.** In **Window > Package Manager**, choose **+ > Add package from git URL** and enter:
 
 ```
-https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.1
+https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.2
 ```
 
 On Unity 2021.3 or 2022.3, accept the dialog that offers to add TextMeshPro if it appears.
@@ -198,20 +198,20 @@ The tests above are editor tests. Console targets are handled in code (storefron
 **Window > Package Manager > + > Add package from git URL**:
 
 ```
-https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.1
+https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.2
 ```
 
 Or add it to `Packages/manifest.json`:
 
 ```json
-"com.invonetwork.unity-sdk": "https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.1"
+"com.invonetwork.unity-sdk": "https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.2"
 ```
 
-The `#v3.1.1` suffix pins the release. Change it to upgrade.
+The `#v3.1.2` suffix pins the release. Change it to upgrade.
 
 ### From a .unitypackage
 
-Download `InvoSDK-3.1.1.unitypackage` from the [GitHub release](https://github.com/Invo-Technologies/Invo-unity-sdk/releases) and import it. It contains the same package; Unity places it under `Packages/` as an embedded package.
+Download `InvoSDK-3.1.2.unitypackage` from the [GitHub release](https://github.com/Invo-Technologies/Invo-unity-sdk/releases) and import it. It contains the same package; Unity places it under `Packages/` as an embedded package.
 
 ### What is in the package
 
@@ -281,7 +281,7 @@ The API bases are compile-time constants (`APIManager.SandboxApiBase`, `APIManag
 | Setting | Field | Notes |
 |---|---|---|
 | Sandbox Game ID | `sandboxGameId` | From the sandbox console. **Test connection** checks it. |
-| Sandbox keys | `sandboxKeys` | One `ivsdk_` key per storefront. Steam, Google Play, App Store, PlayStation, Xbox and Nintendo Switch are listed by default; **+ Add storefront** adds Epic Games Store, Web or Platform. Each row has a **Test** button and a format check. |
+| Sandbox keys | `sandboxKeys` | One sandbox key per storefront. New sandbox keys start with `ivsdk_test_`; older `ivsdk_` keys keep working. A production key (`ivsdk_live_`) is flagged as **Live key**: it belongs on your server only. Steam, Google Play, App Store, PlayStation, Xbox and Nintendo Switch are listed by default; **+ Add storefront** adds Epic Games Store, Web or Platform. Each row has a **Test** button and a format check. |
 | Storefront per build target | `storefrontMap` | Which storefront each kind of build belongs to. See [Storefronts](#storefronts). |
 | Test player | `playerEmail`, `playerPhone`, `playerName` | The initial active player, for sandbox testing. Stripped from production builds. |
 | SANDBOX watermark | `showSandboxWatermark` | A small "SANDBOX · Steam" label in the editor and development builds while the SDK talks to sandbox. Never in release builds. |
@@ -1282,6 +1282,7 @@ Test Purchase handles `200` with `status: "requires_action"`: 3-D Secure is requ
 | Production build fails with "Production build stopped" | The build guard. Fix each listed item on **Tools > Invo SDK > Settings > Production**. |
 | `SDK_GAME_SERVER_REQUIRED` | Production with no Game Server URL, or sandbox with no key for this storefront and no server. |
 | `401` on every call (sandbox) | Missing or wrong sandbox key for this build's storefront, or a production key against sandbox. Use the **Test** button next to the key. |
+| `401` `KEY_FOR_OTHER_ENVIRONMENT` | The key belongs to the other environment: an `ivsdk_live_` key against the sandbox, or an `ivsdk_test_` key against production. Check Sandbox/Production in **Tools > Invo SDK > Settings**, and your server's key in production. `InvoApiException.IsKeyForOtherEnvironment` is true. |
 | `401` / `404` through your server | Your server is missing that storefront's key, or does not forward `/api/*`. Check its handling of `X-Invo-Storefront`. |
 | `403 "Game is not active"` | `game_status` is not `live` or `testing`. Check the console. |
 | `403 TENANT_NOT_MIGRATED` / `503 sdk_verification_disabled` | SDK verification is not enabled for your game. Ask Invo (sandbox first). |

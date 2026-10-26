@@ -7,6 +7,27 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [3.1.2] — Unreleased
+
+Editor and error-message improvements for the new key prefixes. No change to API traffic.
+
+### Added
+
+- **A clear message for a key sent to the wrong environment.** When the API answers 401
+  `KEY_FOR_OTHER_ENVIRONMENT`, `InvoApiException.Message` now says to check Sandbox/Production in
+  Tools > Invo SDK > Settings, and the new `InvoApiException.IsKeyForOtherEnvironment` is true. The
+  Settings window's **Test** button shows the same message.
+- **Live keys are flagged in sandbox slots.** A key starting with `ivsdk_live_` shows **Live key**
+  and a warning that production keys belong on your game server only.
+
+### Changed
+
+- Key tooltips and docs say new sandbox keys start with `ivsdk_test_`. Older `ivsdk_` keys keep
+  working and still pass the format check.
+- The sandbox console link is now `https://console.invo.network/test`. The old address redirects.
+
+---
+
 ## [3.1.1] — 2026-10-12
 
 First Asset Store release.

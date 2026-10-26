@@ -9,6 +9,17 @@ namespace InvoSDK
     /// </summary>
     public class InvoApiException : Exception
     {
+        /// <summary>
+        /// 401 code for a key sent to the wrong environment, e.g. a production key (<c>ivsdk_live_</c>)
+        /// against the sandbox or a sandbox key (<c>ivsdk_test_</c>) against production.
+        /// </summary>
+        public const string KeyForOtherEnvironmentCode = "KEY_FOR_OTHER_ENVIRONMENT";
+
+        /// <summary>The message used in place of the server's for <see cref="KeyForOtherEnvironmentCode"/>.</summary>
+        public const string KeyForOtherEnvironmentMessage =
+            "This key belongs to the other Invo environment. Check Sandbox/Production in Tools > Invo SDK > Settings: " +
+            "sandbox keys start with ivsdk_test_ and production keys (kept on your game server) with ivsdk_live_.";
+
         /// <summary>HTTP status code. 0 when the request never reached the server.</summary>
         public long StatusCode { get; }
 
@@ -32,6 +43,9 @@ namespace InvoSDK
 
         /// <summary>True when the request never reached the server (offline, DNS, TLS).</summary>
         public bool IsNetworkError => StatusCode == 0;
+
+        /// <summary>True when the key was sent to the wrong environment (see <see cref="KeyForOtherEnvironmentCode"/>).</summary>
+        public bool IsKeyForOtherEnvironment => ErrorCode == KeyForOtherEnvironmentCode;
 
         public InvoApiException(string message, long statusCode, string errorCode, string errorId,
                                 int? retryAfterSeconds, string body)

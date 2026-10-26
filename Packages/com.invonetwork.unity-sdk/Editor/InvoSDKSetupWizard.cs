@@ -204,7 +204,8 @@ namespace InvoSDK.Editor
                     entry.sdkKey = revealKeys
                         ? EditorGUILayout.TextField(entry.sdkKey)
                         : EditorGUILayout.PasswordField(entry.sdkKey);
-                    GUILayout.Label(KeyStatus(entry.sdkKey), GUILayout.Width(90));
+                    GUILayout.Label(new GUIContent(KeyStatus(entry.sdkKey),
+                        "Sandbox keys look like ivsdk_test_...; older ivsdk_... keys still work."), GUILayout.Width(90));
                     string testId = "key:" + entry.storefront;
                     using (new EditorGUI.DisabledScope(pendingTest != null || string.IsNullOrWhiteSpace(entry.sdkKey) ||
                                                        string.IsNullOrWhiteSpace(config.sandboxGameId)))
@@ -215,6 +216,11 @@ namespace InvoSDK.Editor
                     if (!DefaultStorefronts.Contains(entry.storefront) && GUILayout.Button("−", GUILayout.Width(22)))
                         remove = entry;
                 }
+                if (IsProductionKey(entry.sdkKey))
+                    EditorGUILayout.HelpBox(
+                        "This is a production key (ivsdk_live_). Sandbox keys start with ivsdk_test_. Production keys " +
+                        "belong on your game server only, never in the project.",
+                        MessageType.Error);
                 DrawTestResult("key:" + entry.storefront);
             }
             if (remove != null)
@@ -436,7 +442,8 @@ namespace InvoSDK.Editor
             }
             else
             {
-                result = $"Failed: HTTP {pendingTest.responseCode}. " + DescribeFailure(pendingTest.responseCode);
+                result = $"Failed: HTTP {pendingTest.responseCode}. " +
+                         DescribeFailure(pendingTest.responseCode, pendingTest.downloadHandler?.text);
             }
             testResults[pendingTestKey] = result;
             pendingTest.Dispose();
@@ -444,8 +451,10 @@ namespace InvoSDK.Editor
             Repaint();
         }
 
-        private static string DescribeFailure(long code)
+        internal static string DescribeFailure(long code, string body)
         {
+            if (ErrorCodeOf(body) == InvoApiException.KeyForOtherEnvironmentCode)
+                return InvoApiException.KeyForOtherEnvironmentMessage;
             switch (code)
             {
                 case 0: return "No response: check the URL and your network.";
@@ -468,12 +477,39 @@ namespace InvoSDK.Editor
 
         // ------------------------------------------------------------------ helpers
 
-        private static string KeyStatus(string key)
+        /// <summary>The <c>error_code</c> (or <c>code</c>) of an error body; null when there is none or it is not JSON.</summary>
+        private static string ErrorCodeOf(string body)
+        {
+            if (string.IsNullOrWhiteSpace(body))
+                return null;
+            try
+            {
+                JObject json = JObject.Parse(body);
+                JToken code = json["error_code"] ?? json["code"];
+                return code != null && code.Type == JTokenType.String ? (string)code : null;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Format check for a sandbox key slot. New keys are ivsdk_test_ (sandbox) or ivsdk_live_
+        /// (production); older ivsdk_ keys have no environment in the prefix and keep working.
+        /// </summary>
+        internal static string KeyStatus(string key)
         {
             if (string.IsNullOrWhiteSpace(key)) return "Not set";
             string trimmed = key.Trim();
             if (trimmed != key) return "Has spaces";
+            if (IsProductionKey(trimmed)) return "Live key";
             return trimmed.StartsWith("ivsdk_", StringComparison.Ordinal) ? "Looks valid" : "Not ivsdk_";
+        }
+
+        internal static bool IsProductionKey(string key)
+        {
+            return key != null && key.Trim().StartsWith("ivsdk_live_", StringComparison.Ordinal);
         }
 
         private static string PlatformLabel(InvoBuildPlatform platform)

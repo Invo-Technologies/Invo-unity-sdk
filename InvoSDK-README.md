@@ -66,8 +66,8 @@ On 2021.3 and 2022.3 TextMeshPro is the separate `com.unity.textmeshpro` package
 add it when it is missing.
 
 1. **Window > Package Manager > + > Add package from git URL**:
-   `https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.1`
-   (or import `InvoSDK-3.1.1.unitypackage` from the release).
+   `https://github.com/Invo-Technologies/Invo-unity-sdk.git?path=/Packages/com.invonetwork.unity-sdk#v3.1.2`
+   (or import `InvoSDK-3.1.2.unitypackage` from the release).
 2. **Tools > Invo SDK > Settings** (see [Configuration](#configuration)).
 3. Drag `InvoAPI.prefab` and `InvoSDKWindow.prefab` (package `Runtime/Prefabs`) into your first scene,
    with an EventSystem whose input module matches your project's input handling.
@@ -87,7 +87,7 @@ The Settings window detects this and offers to select the stray asset.
 
 | Tab | Fields |
 |---|---|
-| **Sandbox** | Sandbox Game ID; one sandbox key (`ivsdk_…`) per storefront: Steam, Google Play, App Store, PlayStation, Xbox, Nintendo Switch, and Epic Games Store, Web or Platform if you add them; which storefront each build target uses; the test player (email, phone, name); the SANDBOX watermark for development builds. Test connection checks the Game ID and key. |
+| **Sandbox** | Sandbox Game ID; one sandbox key (`ivsdk_test_…`, or an older `ivsdk_…`) per storefront: Steam, Google Play, App Store, PlayStation, Xbox, Nintendo Switch, and Epic Games Store, Web or Platform if you add them; which storefront each build target uses; the test player (email, phone, name); the SANDBOX watermark for development builds. Test connection checks the Game ID and key. |
 | **Production** | Production Game ID, `gameServerUrl` (required, https) and `checkoutSessionEndpoint`. **No key fields, by design.** Your server holds one production key per storefront. |
 | **Game & display** | `gameName`, `gameIconUrl`, `gameCurrencyName`, `gameCurrencyUrl`, `gameVersion`. |
 
@@ -588,6 +588,7 @@ Hosted checkout is separate: it keeps its own `checkoutSessionEndpoint` (§2).
 | Claim returns `404` cross-game | Cross-game claims need the receiving game's key. See §4. |
 | Purchase shows "failed" but the balance dropped | A `409` was rendered as an error. `ex.IsDuplicate` means it **succeeded**. |
 | `401` on every call | Missing or wrong `sdkKey`, or a sandbox key against production. |
+| `401` `KEY_FOR_OTHER_ENVIRONMENT` | The key is for the other environment (`ivsdk_test_` is sandbox, `ivsdk_live_` is production). Check Sandbox/Production in **Tools > Invo SDK > Settings**. |
 | `403 "Game is not active"` | `game_status` is not `live` or `testing`. Check the console. |
 | Repeated `429` | An anti-abuse lockout. Respect `ex.RetryAfterSeconds` and stop re-enabling the button. |
 | Real-money purchase does nothing | `checkoutSessionEndpoint` is not set. See §2. |

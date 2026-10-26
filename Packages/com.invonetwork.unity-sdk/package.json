@@ -1,6 +1,6 @@
 {
   "name": "com.invonetwork.unity-sdk",
-  "version": "3.1.1",
+  "version": "3.1.2",
   "displayName": "Invo SDK",
   "description": "Invo in-game currency SDK: store (top up and items), sends and transfers approved on the player's phone, collect, phone changes, and a themeable drop-in UI. Unity 2021.3+.",
   "unity": "2021.3",
